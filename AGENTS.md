@@ -12,3 +12,7 @@
 - Do not assume port 6800; pick a random free port per-instance and save to config
 - Failed downloads show "Show Error" (errorCode + errorMessage) and "Show Log" buttons
 - Commit as you go using conventional commit style
+- Enforce single instance (refuse to launch if already running)
+- Fix pause/cancel: menu items must be enabled regardless of whether parent item has its own action
+- Fix Quit: must not set target = self on terminate: action
+- Richer menu: colored SF Symbol state icons, two-line items (name + progress bar / speed / ETA / size), total speed in status button, "Open Downloads Folder", empty-state label
