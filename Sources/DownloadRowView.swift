@@ -141,6 +141,8 @@ final class DownloadRowView: NSTableCellView {
 
     func configure(with dl: Download) {
         nameLabel.stringValue = dl.displayName
+        nameLabel.toolTip = dl.displayName
+        toolTip = dl.displayName
         iconView.image = stateImage(dl.status)
         detailLabel.stringValue = detailString(dl)
 
@@ -169,7 +171,10 @@ final class DownloadRowView: NSTableCellView {
     private func styleButton(_ btn: NSButton, symbol: String, tint: NSColor, tip: String, hidden: Bool) {
         btn.isHidden = hidden
         guard !hidden else { return }
-        btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+        // Fixed point size keeps every action icon the same visual weight
+        // regardless of the 22x22 hit-target frame.
+        btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .regular))
         btn.contentTintColor = tint
         btn.toolTip = tip
     }
@@ -234,7 +239,7 @@ final class DownloadRowView: NSTableCellView {
     private static func makeIconButton() -> NSButton {
         let b = NSButton()
         b.isBordered = false
-        b.imageScaling = .scaleProportionallyUpOrDown
+        b.imageScaling = .scaleNone
         b.translatesAutoresizingMaskIntoConstraints = false
         return b
     }

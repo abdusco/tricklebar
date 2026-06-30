@@ -176,9 +176,14 @@ final class DownloadsViewController: NSViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let addBtn = NSButton()
-        addBtn.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "Add Download")
-        addBtn.contentTintColor = .systemBlue
-        addBtn.isBordered = false
+        // A solid, properly sized plus glyph reads as an obvious "add" affordance;
+        // the unconfigured symbol scaled to a thin hairline before.
+        addBtn.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add Download")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .bold))
+        addBtn.imageScaling = .scaleNone
+        addBtn.bezelStyle = .circular
+        addBtn.isBordered = true
+        addBtn.contentTintColor = .controlAccentColor
         addBtn.toolTip = "Add Download"
         addBtn.target = self
         addBtn.action = #selector(addDownloadAction)
@@ -417,7 +422,7 @@ extension DownloadsViewController: NSTableViewDataSource, NSTableViewDelegate {
                 },
                 primarySymbol: "folder.fill", primaryTint: .systemBlue, primaryTip: "Reveal in Finder",
                 secondary: { [weak self] in self?.manager?.removeResult(gid: gid) },
-                secondarySymbol: "trash.fill", secondaryTint: .systemRed, secondaryTip: "Remove from list"
+                secondarySymbol: "xmark.circle.fill", secondaryTint: .systemRed, secondaryTip: "Remove from list"
             )
         case .error:
             v.setActions(
@@ -427,7 +432,7 @@ extension DownloadsViewController: NSTableViewDataSource, NSTableViewDelegate {
                 },
                 primarySymbol: "arrow.clockwise.circle.fill", primaryTint: .systemBlue, primaryTip: "Retry",
                 secondary: { [weak self] in self?.manager?.removeResult(gid: gid) },
-                secondarySymbol: "trash.fill", secondaryTint: .systemRed, secondaryTip: "Remove",
+                secondarySymbol: "xmark.circle.fill", secondaryTint: .systemRed, secondaryTip: "Remove",
                 tertiary: { [weak self] in
                     guard let dl = self?.manager?.downloads.first(where: { $0.gid == gid }) else { return }
                     self?.showError(for: dl)
