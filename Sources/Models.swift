@@ -33,7 +33,17 @@ struct Download {
         if let file = files.first, !file.path.isEmpty {
             return URL(fileURLWithPath: file.path).lastPathComponent
         }
+        if let name = uriFilename { return name }
         return gid
+    }
+
+    // Derive a filename from the source URL when aria2 hasn't opened the file yet
+    // (e.g. downloads restored paused from a session report an empty file path).
+    private var uriFilename: String? {
+        guard let uri = primaryURI, let comps = URLComponents(string: uri) else { return nil }
+        let last = (comps.path as NSString).lastPathComponent
+        let decoded = last.removingPercentEncoding ?? last
+        return decoded.isEmpty ? nil : decoded
     }
 
     var primaryFilePath: String? {
