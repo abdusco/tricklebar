@@ -17,13 +17,16 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = false
         popover.delegate = self
-        popover.contentSize = NSSize(width: kPopoverWidth, height: 180)
         contentVC.popoverRef = popover
+
+        // Force viewDidLoad now so preferredContentSize is valid before first click.
+        _ = contentVC.view
+        popover.contentSize = contentVC.preferredContentSize
 
         if let btn = statusItem.button {
             btn.action = #selector(togglePopover(_:))
             btn.target = self
-            btn.sendAction(on: [.leftMouseUp])
+            btn.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         updateButton(active: 0, totalSpeed: 0)
     }
@@ -51,13 +54,20 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     }
 
     @objc private func togglePopover(_ sender: NSButton) {
+        if let event = NSApp.currentEvent, event.type == .rightMouseUp {
+            let menu = NSMenu()
+            let quit = NSMenuItem(title: "Quit dlwatch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+            menu.addItem(quit)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+            return
+        }
         if popover.isShown {
             popover.close()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-            popover.contentSize = contentVC.preferredContentSize
-            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+            return
         }
+        NSApp.activate(ignoringOtherApps: true)
+        popover.contentSize = contentVC.preferredContentSize
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     }
 }
 
@@ -89,7 +99,8 @@ final class DownloadsViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
-        let vfx = NSVisualEffectView(frame: .zero)
+        let vfx = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: kPopoverWidth, height: 180))
+        vfx.autoresizingMask = [.width, .height]
         vfx.material = .popover
         vfx.blendingMode = .behindWindow
         vfx.state = .active
