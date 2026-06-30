@@ -39,6 +39,9 @@ final class DownloadManager {
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
+        // Flush the session deterministically before SIGTERM so the latest
+        // paused/queued state is captured even on a quick quit.
+        rpc?.saveSessionSync()
         aria2cProcess?.terminate()
         aria2cProcess = nil
     }
@@ -201,13 +204,19 @@ final class DownloadManager {
     // MARK: - Actions
 
     func addDownload(urls: [String], options: [String: Any] = [:], completion: @escaping (String?, Error?) -> Void) {
-        rpc?.addUri(urls: urls, options: options, completion: completion)
+        rpc?.addUri(urls: urls, options: options) { [weak self] gid, err in
+            self?.persistSession()
+            completion(gid, err)
+        }
     }
 
-    func pause(gid: String) { rpc?.pause(gid: gid) { _ in } }
-    func resume(gid: String) { rpc?.unpause(gid: gid) { _ in } }
-    func cancel(gid: String) { rpc?.remove(gid: gid) { _ in } }
-    func removeResult(gid: String) { rpc?.removeResult(gid: gid) { _ in } }
+    func pause(gid: String) { rpc?.pause(gid: gid) { [weak self] _ in self?.persistSession() } }
+    func resume(gid: String) { rpc?.unpause(gid: gid) { [weak self] _ in self?.persistSession() } }
+    func cancel(gid: String) { rpc?.remove(gid: gid) { [weak self] _ in self?.persistSession() } }
+    func removeResult(gid: String) { rpc?.removeResult(gid: gid) { [weak self] _ in self?.persistSession() } }
+
+    // Flush the session so the on-disk state reflects the latest action.
+    private func persistSession() { rpc?.saveSession { _ in } }
 
     func retry(download: Download) {
         guard let rpc, let uri = download.primaryURI else {

@@ -132,6 +132,14 @@ final class Aria2RPC {
         call(method: "aria2.changeGlobalOption", params: [opts]) { _, e in completion(e) }
     }
 
+    func saveSession(completion: @escaping (Error?) -> Void) {
+        call(method: "aria2.saveSession", params: []) { _, e in completion(e) }
+    }
+
+    func saveSessionSync() {
+        _ = try? callSync(method: "aria2.saveSession", params: [])
+    }
+
     // MARK: - Parsing
 
     private static func parseDownloads(_ raw: Any?) -> [Download] {
