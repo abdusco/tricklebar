@@ -90,21 +90,30 @@ final class DownloadsViewController: NSViewController {
     private var tableView: NSTableView!
     private var items: [ListItem] = []
     weak var popoverRef: NSPopover?
+    private var heightConstraint: NSLayoutConstraint!
 
     init(manager: DownloadManager) {
         self.manager = manager
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: kPopoverWidth, height: 180)
     }
     required init?(coder: NSCoder) { fatalError() }
 
     override func loadView() {
         let vfx = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: kPopoverWidth, height: 180))
-        vfx.autoresizingMask = [.width, .height]
+        vfx.translatesAutoresizingMaskIntoConstraints = false
         vfx.material = .popover
         vfx.blendingMode = .behindWindow
         vfx.state = .active
         view = vfx
+
+        // Explicit size constraints drive the popover dimensions. NSPopover sizes
+        // its window to the content view's fitting size, so a fixed width here
+        // prevents Auto Layout from collapsing the popover to a sliver.
+        heightConstraint = vfx.heightAnchor.constraint(equalToConstant: 180)
+        NSLayoutConstraint.activate([
+            vfx.widthAnchor.constraint(equalToConstant: kPopoverWidth),
+            heightConstraint,
+        ])
     }
 
     override func viewDidLoad() {
@@ -145,6 +154,7 @@ final class DownloadsViewController: NSViewController {
         }.clamped(to: 40...kMaxTableHeight)
         let emptyH: CGFloat = items.isEmpty ? 44 : 0
         let total = kTopBarHeight + tableH + emptyH + kBottomBarHeight
+        heightConstraint?.constant = total
         preferredContentSize = NSSize(width: kPopoverWidth, height: total)
     }
 
