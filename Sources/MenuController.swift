@@ -16,9 +16,8 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.contentViewController = contentVC
         popover.behavior = .transient
         popover.delegate = self
-
-        _ = contentVC.view  // force viewDidLoad → recalcSize → preferredContentSize
-        popover.contentSize = contentVC.preferredContentSize
+        popover.contentSize = NSSize(width: kPopoverWidth, height: 180)
+        contentVC.popoverRef = popover
 
         if let btn = statusItem.button {
             btn.action = #selector(togglePopover(_:))
@@ -55,7 +54,8 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             popover.close()
         } else {
             NSApp.activate(ignoringOtherApps: true)
-            popover.contentSize = contentVC.preferredContentSize
+            let sz = contentVC.preferredContentSize
+            if sz.width > 0 { popover.contentSize = sz }
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
         }
     }
@@ -79,11 +79,11 @@ final class DownloadsViewController: NSViewController {
     private weak var manager: DownloadManager?
     private var tableView: NSTableView!
     private var items: [ListItem] = []
+    weak var popoverRef: NSPopover?
 
     init(manager: DownloadManager) {
         self.manager = manager
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = NSSize(width: kPopoverWidth, height: 200)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -245,6 +245,7 @@ final class DownloadsViewController: NSViewController {
     // MARK: - Actions
 
     @objc private func addDownloadAction() {
+        popoverRef?.close()
         let alert = NSAlert()
         alert.messageText = "Add Download"
         alert.informativeText = "Enter URL(s), one per line:"
