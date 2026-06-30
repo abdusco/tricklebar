@@ -16,3 +16,6 @@
 - Fix pause/cancel: menu items must be enabled regardless of whether parent item has its own action
 - Fix Quit: must not set target = self on terminate: action
 - Richer menu: colored SF Symbol state icons, two-line items (name + progress bar / speed / ETA / size), total speed in status button, "Open Downloads Folder", empty-state label
+- Replace NSMenu+submenu with NSPopover + NSTableView with real per-row action buttons
+- Popover updates live while open (no isOpen guard); poll writes directly into the table
+- Per-row icon buttons: Pause/Resume/Cancel for active, Reveal/Remove for completed, Retry/Remove/Show Error for failed

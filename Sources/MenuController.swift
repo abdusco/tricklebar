@@ -1,292 +1,244 @@
 import AppKit
 import Foundation
 
-final class MenuController: NSObject, NSMenuDelegate {
-    private weak var manager: DownloadManager?
+// MARK: - PopoverController
+
+final class PopoverController: NSObject, NSPopoverDelegate {
+    private let popover = NSPopover()
+    private let contentVC: DownloadsViewController
     private weak var statusItem: NSStatusItem?
-    private var menuIsOpen = false
-    private var pendingDownloads: [Download]?
 
     init(manager: DownloadManager, statusItem: NSStatusItem) {
-        self.manager = manager
+        self.contentVC = DownloadsViewController(manager: manager)
         self.statusItem = statusItem
+        super.init()
+
+        popover.contentViewController = contentVC
+        popover.behavior = .transient
+        popover.delegate = self
+
+        if let btn = statusItem.button {
+            btn.action = #selector(togglePopover(_:))
+            btn.target = self
+            btn.sendAction(on: [.leftMouseUp])
+        }
+        updateButton(active: 0, totalSpeed: 0)
     }
 
-    // MARK: - Rebuild
-
+    // Called by AppDelegate on every manager update — no isOpen guard; view updates live.
     func rebuild(with downloads: [Download]) {
-        guard !menuIsOpen else { pendingDownloads = downloads; return }
-        buildMenu(downloads)
+        let active = downloads.filter { $0.status == .active }
+        updateButton(active: active.count, totalSpeed: active.reduce(0) { $0 + $1.downloadSpeed })
+        contentVC.update(with: downloads)
     }
 
-    // MARK: - Build
-
-    private func buildMenu(_ downloads: [Download]) {
-        let active    = downloads.filter { $0.status == .active }
-        let paused    = downloads.filter { $0.status == .paused }
-        let waiting   = downloads.filter { $0.status == .waiting }
-        let completed = downloads.filter { $0.status == .complete }
-        let failed    = downloads.filter { $0.status == .error }
-
-        updateButton(activeCount: active.count,
-                     totalSpeed: active.reduce(0) { $0 + $1.downloadSpeed })
-
-        let menu = NSMenu()
-        menu.delegate = self
-        menu.autoenablesItems = false
-
-        var didAddSection = false
-        func section(_ title: String, count: Int, _ body: () -> Void) {
-            guard count > 0 else { return }
-            if didAddSection { menu.addItem(.separator()) }
-            menu.addItem(sectionHeader("\(title)  ·  \(count)"))
-            body()
-            didAddSection = true
-        }
-
-        section("DOWNLOADING", count: active.count)    { active.forEach    { addActive($0,    to: menu) } }
-        section("PAUSED",      count: paused.count)    { paused.forEach    { addPaused($0,    to: menu) } }
-        section("QUEUED",      count: waiting.count)   { waiting.forEach   { addWaiting($0,   to: menu) } }
-        section("COMPLETED",   count: completed.count) { completed.forEach { addCompleted($0, to: menu) } }
-        section("FAILED",      count: failed.count)    { failed.forEach    { addFailed($0,    to: menu) } }
-
-        if !didAddSection {
-            let empty = NSMenuItem()
-            empty.isEnabled = false
-            empty.attributedTitle = attr("No active downloads",
-                font: .systemFont(ofSize: 12), color: .tertiaryLabelColor)
-            menu.addItem(empty)
-        }
-
-        menu.addItem(.separator())
-
-        let addItem = makeItem("Add Download…", action: #selector(addDownloadAction), key: "n",
-                               symbol: "plus.circle.fill")
-        menu.addItem(addItem)
-
-        let openFolder = makeItem("Open Downloads Folder", action: #selector(openDownloadsFolderAction),
-                                  symbol: "folder.fill")
-        menu.addItem(openFolder)
-
-        menu.addItem(.separator())
-
-        // target intentionally nil so terminate: travels the responder chain to NSApp
-        let quit = NSMenuItem(title: "Quit dlwatch", action: #selector(NSApplication.terminate(_:)),
-                              keyEquivalent: "q")
-        menu.addItem(quit)
-
-        statusItem?.menu = menu
-    }
-
-    // MARK: - Status button
-
-    private func updateButton(activeCount: Int, totalSpeed: Int64) {
+    private func updateButton(active: Int, totalSpeed: Int64) {
         guard let btn = statusItem?.button else { return }
         let img = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: "dlwatch")
         img?.isTemplate = true
         btn.image = img
-        if activeCount > 0 {
+        if active > 0 {
             btn.imagePosition = .imageLeft
-            let speedStr = totalSpeed > 0 ? "  \(formatBytes(totalSpeed))/s" : "  \(activeCount)"
-            btn.title = speedStr
+            btn.title = totalSpeed > 0 ? "  \(formatBytes(totalSpeed))/s" : "  \(active)"
         } else {
             btn.imagePosition = .imageOnly
             btn.title = ""
         }
     }
 
-    // MARK: - Row builders
-
-    private func addActive(_ dl: Download, to menu: NSMenu) {
-        let item = NSMenuItem()
-        item.isEnabled = true
-        item.image = stateImage(.active)
-        item.attributedTitle = activeTitle(dl)
-        item.submenu = rowMenu([
-            rowItem("Pause",  #selector(pauseAction(_:)),  dl.gid),
-            rowItem("Cancel", #selector(cancelAction(_:)), dl.gid),
-        ])
-        menu.addItem(item)
-    }
-
-    private func addPaused(_ dl: Download, to menu: NSMenu) {
-        let pct = Int(dl.progress * 100)
-        let detail = "\(progressBar(dl.progress))  \(pct)%\(sizeDetail(dl))"
-        let item = NSMenuItem()
-        item.isEnabled = true
-        item.image = stateImage(.paused)
-        item.attributedTitle = twoLine(dl.displayName, detail)
-        item.submenu = rowMenu([
-            rowItem("Resume", #selector(resumeAction(_:)), dl.gid),
-            rowItem("Cancel", #selector(cancelAction(_:)), dl.gid),
-        ])
-        menu.addItem(item)
-    }
-
-    private func addWaiting(_ dl: Download, to menu: NSMenu) {
-        let size = dl.totalLength > 0 ? formatBytes(dl.totalLength) : "queued"
-        let item = NSMenuItem()
-        item.isEnabled = true
-        item.image = stateImage(.waiting)
-        item.attributedTitle = twoLine(dl.displayName, size)
-        item.submenu = rowMenu([rowItem("Remove", #selector(cancelAction(_:)), dl.gid)])
-        menu.addItem(item)
-    }
-
-    private func addCompleted(_ dl: Download, to menu: NSMenu) {
-        let size = dl.totalLength > 0 ? formatBytes(dl.totalLength) : ""
-        let item = NSMenuItem()
-        item.isEnabled = true
-        item.image = stateImage(.complete)
-        item.attributedTitle = twoLine(dl.displayName, size)
-        item.action = #selector(revealAction(_:))
-        item.target = self
-        item.representedObject = dl.gid
-        item.submenu = rowMenu([
-            rowItem("Reveal in Finder",  #selector(revealAction(_:)),       dl.gid),
-            rowItem("Remove from list",  #selector(removeResultAction(_:)), dl.gid),
-        ])
-        menu.addItem(item)
-    }
-
-    private func addFailed(_ dl: Download, to menu: NSMenu) {
-        let errStr = dl.errorMessage.flatMap { $0.isEmpty ? nil : $0 }
-            ?? (dl.errorCode.map { "Error \($0)" })
-            ?? "Unknown error"
-        let item = NSMenuItem()
-        item.isEnabled = true
-        item.image = stateImage(.error)
-        item.attributedTitle = twoLine(dl.displayName, errStr,
-                                       secondaryColor: .systemRed.withAlphaComponent(0.8))
-        item.submenu = rowMenu([
-            rowItem("Show Error",    #selector(showErrorAction(_:)),    dl.gid),
-            rowItem("Show Log",      #selector(showLogAction(_:)),      dl.gid),
-            .separator(),
-            rowItem("Retry",         #selector(retryAction(_:)),        dl.gid),
-            rowItem("Remove",        #selector(removeResultAction(_:)), dl.gid),
-        ])
-        menu.addItem(item)
-    }
-
-    // MARK: - Title helpers
-
-    private func activeTitle(_ dl: Download) -> NSAttributedString {
-        let pct = Int(dl.progress * 100)
-        var parts: [String] = ["\(progressBar(dl.progress))  \(pct)%"]
-        if dl.downloadSpeed > 0 { parts.append("↓ \(formatBytes(dl.downloadSpeed))/s") }
-        if let e = etaString(dl) { parts.append("ETA \(e)") }
-        let sz = sizeDetail(dl)
-        if !sz.isEmpty { parts.append(sz.trimmingCharacters(in: .init(charactersIn: "  ·  "))) }
-        return twoLine(dl.displayName, parts.joined(separator: "   "))
-    }
-
-    private func twoLine(_ primary: String, _ secondary: String,
-                         secondaryColor: NSColor = .secondaryLabelColor) -> NSAttributedString {
-        let s = NSMutableAttributedString()
-        s.append(NSAttributedString(string: primary, attributes: [
-            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
-            .foregroundColor: NSColor.labelColor,
-        ]))
-        if !secondary.isEmpty {
-            s.append(NSAttributedString(string: "\n" + secondary, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: secondaryColor,
-            ]))
+    @objc private func togglePopover(_ sender: NSButton) {
+        if popover.isShown {
+            popover.close()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
         }
-        return s
+    }
+}
+
+// MARK: - DownloadsViewController
+
+private enum ListItem {
+    case sectionHeader(String)
+    case download(Download)
+}
+
+private let kRowHeight: CGFloat   = 62
+private let kHeaderHeight: CGFloat = 26
+private let kTopBarHeight: CGFloat  = 52
+private let kBottomBarHeight: CGFloat = 44
+private let kPopoverWidth: CGFloat  = 390
+private let kMaxTableHeight: CGFloat = 360
+
+final class DownloadsViewController: NSViewController {
+    private weak var manager: DownloadManager?
+    private var tableView: NSTableView!
+    private var items: [ListItem] = []
+
+    init(manager: DownloadManager) {
+        self.manager = manager
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        let vfx = NSVisualEffectView(frame: .zero)
+        vfx.material = .popover
+        vfx.blendingMode = .behindWindow
+        vfx.state = .active
+        view = vfx
     }
 
-    private func progressBar(_ p: Double, width: Int = 10) -> String {
-        let n = min(width, max(0, Int(p * Double(width))))
-        return String(repeating: "▓", count: n) + String(repeating: "░", count: width - n)
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        buildLayout()
+        update(with: [])
     }
 
-    private func sizeDetail(_ dl: Download) -> String {
-        guard dl.totalLength > 0 else { return "" }
-        return "  ·  \(formatBytes(dl.completedLength)) / \(formatBytes(dl.totalLength))"
+    // MARK: - Update (called on every poll; works while popover is open)
+
+    func update(with downloads: [Download]) {
+        items = buildItems(from: downloads)
+        if isViewLoaded { tableView.reloadData() }
+        recalcSize()
     }
 
-    private func etaString(_ dl: Download) -> String? {
-        guard dl.downloadSpeed > 0, dl.totalLength > dl.completedLength else { return nil }
-        let secs = (dl.totalLength - dl.completedLength) / dl.downloadSpeed
-        if secs < 60    { return "\(secs)s" }
-        if secs < 3600  { return "\(secs / 60)m" }
-        return "\(secs / 3600)h \((secs % 3600) / 60)m"
-    }
-
-    // MARK: - Item & menu factories
-
-    private func sectionHeader(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem()
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-            .foregroundColor: NSColor.tertiaryLabelColor,
-            .kern: 1.2,
-        ])
-        return item
-    }
-
-    private func makeItem(_ title: String, action: Selector, key: String = "",
-                          symbol: String? = nil) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        item.target = self
-        item.isEnabled = true
-        if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
-        return item
-    }
-
-    private func rowItem(_ title: String, _ sel: Selector, _ gid: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
-        item.target = self
-        item.representedObject = gid
-        item.isEnabled = true
-        return item
-    }
-
-    private func rowMenu(_ items: [NSMenuItem]) -> NSMenu {
-        let m = NSMenu()
-        m.autoenablesItems = false
-        items.forEach { m.addItem($0) }
-        return m
-    }
-
-    private func attr(_ s: String, font: NSFont, color: NSColor) -> NSAttributedString {
-        NSAttributedString(string: s, attributes: [.font: font, .foregroundColor: color])
-    }
-
-    // MARK: - State images
-
-    private func stateImage(_ status: DownloadStatus) -> NSImage? {
-        let (symbol, color): (String, NSColor) = {
-            switch status {
-            case .active:   return ("arrow.down.circle.fill", .systemBlue)
-            case .paused:   return ("pause.circle.fill",      .systemOrange)
-            case .waiting:  return ("clock.circle.fill",      .systemGray)
-            case .complete: return ("checkmark.circle.fill",  .systemGreen)
-            case .error, .removed: return ("xmark.circle.fill", .systemRed)
-            }
-        }()
-        guard let base = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) else { return nil }
-        let cfg = NSImage.SymbolConfiguration(paletteColors: [color])
-        return base.withSymbolConfiguration(cfg)
-    }
-
-    // MARK: - Delegate
-
-    func menuWillOpen(_ menu: NSMenu) { menuIsOpen = true }
-
-    func menuDidClose(_ menu: NSMenu) {
-        menuIsOpen = false
-        if let pending = pendingDownloads {
-            pendingDownloads = nil
-            DispatchQueue.main.async { self.buildMenu(pending) }
+    private func buildItems(from downloads: [Download]) -> [ListItem] {
+        var out: [ListItem] = []
+        let order: [(String, DownloadStatus)] = [
+            ("DOWNLOADING", .active),
+            ("PAUSED",      .paused),
+            ("QUEUED",      .waiting),
+            ("COMPLETED",   .complete),
+            ("FAILED",      .error),
+        ]
+        for (title, status) in order {
+            let group = downloads.filter { $0.status == status }
+            guard !group.isEmpty else { continue }
+            out.append(.sectionHeader(title))
+            group.forEach { out.append(.download($0)) }
         }
+        return out
+    }
+
+    private func recalcSize() {
+        let tableH = items.reduce(CGFloat(0)) { sum, item in
+            sum + (item.isSectionHeader ? kHeaderHeight : kRowHeight)
+        }.clamped(to: 40...kMaxTableHeight)
+        let emptyH: CGFloat = items.isEmpty ? 44 : 0
+        let total = kTopBarHeight + tableH + emptyH + kBottomBarHeight
+        preferredContentSize = NSSize(width: kPopoverWidth, height: total)
+    }
+
+    // MARK: - Layout
+
+    private func buildLayout() {
+        // ─── Top bar ───────────────────────────────────────────────────────
+        let topBar = NSView()
+        topBar.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = NSTextField(labelWithString: "Downloads")
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let addBtn = NSButton()
+        addBtn.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "Add Download")
+        addBtn.contentTintColor = .systemBlue
+        addBtn.isBordered = false
+        addBtn.toolTip = "Add Download"
+        addBtn.target = self
+        addBtn.action = #selector(addDownloadAction)
+        addBtn.translatesAutoresizingMaskIntoConstraints = false
+
+        topBar.addSubview(titleLabel)
+        topBar.addSubview(addBtn)
+
+        let topSep = separator()
+        topBar.addSubview(topSep)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
+            titleLabel.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
+            addBtn.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -14),
+            addBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
+            addBtn.widthAnchor.constraint(equalToConstant: 22),
+            addBtn.heightAnchor.constraint(equalToConstant: 22),
+            topSep.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
+            topSep.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
+            topSep.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
+            topSep.heightAnchor.constraint(equalToConstant: 1),
+        ])
+
+        // ─── Table ─────────────────────────────────────────────────────────
+        tableView = NSTableView()
+        tableView.style = .plain
+        tableView.headerView = nil
+        tableView.intercellSpacing = NSSize(width: 0, height: 0)
+        tableView.backgroundColor = .clear
+        tableView.selectionHighlightStyle = .none
+        tableView.dataSource = self
+        tableView.delegate = self
+        let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("col"))
+        col.resizingMask = .autoresizingMask
+        tableView.addTableColumn(col)
+
+        let scroll = NSScrollView()
+        scroll.documentView = tableView
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+
+        // ─── Bottom bar ────────────────────────────────────────────────────
+        let botBar = NSView()
+        botBar.translatesAutoresizingMaskIntoConstraints = false
+
+        let botSep = separator()
+        botBar.addSubview(botSep)
+
+        let openBtn = textButton("Open Downloads Folder", action: #selector(openFolderAction))
+        let quitBtn = textButton("Quit", action: #selector(quitAction))
+        botBar.addSubview(openBtn)
+        botBar.addSubview(quitBtn)
+
+        NSLayoutConstraint.activate([
+            botSep.topAnchor.constraint(equalTo: botBar.topAnchor),
+            botSep.leadingAnchor.constraint(equalTo: botBar.leadingAnchor),
+            botSep.trailingAnchor.constraint(equalTo: botBar.trailingAnchor),
+            botSep.heightAnchor.constraint(equalToConstant: 1),
+            openBtn.leadingAnchor.constraint(equalTo: botBar.leadingAnchor, constant: 12),
+            openBtn.centerYAnchor.constraint(equalTo: botBar.centerYAnchor, constant: 2),
+            quitBtn.trailingAnchor.constraint(equalTo: botBar.trailingAnchor, constant: -12),
+            quitBtn.centerYAnchor.constraint(equalTo: botBar.centerYAnchor, constant: 2),
+        ])
+
+        // ─── Assemble ──────────────────────────────────────────────────────
+        view.addSubview(topBar)
+        view.addSubview(scroll)
+        view.addSubview(botBar)
+
+        NSLayoutConstraint.activate([
+            topBar.topAnchor.constraint(equalTo: view.topAnchor),
+            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topBar.heightAnchor.constraint(equalToConstant: kTopBarHeight),
+
+            botBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            botBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            botBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            botBar.heightAnchor.constraint(equalToConstant: kBottomBarHeight),
+
+            scroll.topAnchor.constraint(equalTo: topBar.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: botBar.topAnchor),
+        ])
     }
 
     // MARK: - Actions
 
-    @objc func addDownloadAction() {
+    @objc private func addDownloadAction() {
         let alert = NSAlert()
         alert.messageText = "Add Download"
         alert.informativeText = "Enter URL(s), one per line:"
@@ -295,24 +247,18 @@ final class MenuController: NSObject, NSMenuDelegate {
 
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 440, height: 90))
         scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
         scroll.borderType = .bezelBorder
-
-        let contentSize = scroll.contentSize
-        let tf = NSTextView(frame: NSRect(origin: .zero, size: contentSize))
-        tf.minSize = NSSize(width: 0, height: contentSize.height)
+        let cs = scroll.contentSize
+        let tf = NSTextView(frame: NSRect(origin: .zero, size: cs))
+        tf.minSize = NSSize(width: 0, height: cs.height)
         tf.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         tf.isVerticallyResizable = true
         tf.isHorizontallyResizable = false
         tf.autoresizingMask = .width
-        tf.textContainer?.containerSize = NSSize(width: contentSize.width,
-                                                  height: CGFloat.greatestFiniteMagnitude)
+        tf.textContainer?.containerSize = NSSize(width: cs.width, height: CGFloat.greatestFiniteMagnitude)
         tf.textContainer?.widthTracksTextView = true
-        tf.isEditable = true
-        tf.isSelectable = true
-        tf.allowsUndo = true
-        tf.isRichText = false
-        tf.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        tf.isEditable = true; tf.isSelectable = true; tf.allowsUndo = true; tf.isRichText = false
+        tf.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         tf.textContainerInset = NSSize(width: 2, height: 4)
         scroll.documentView = tf
         alert.accessoryView = scroll
@@ -322,82 +268,157 @@ final class MenuController: NSObject, NSMenuDelegate {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         let urls = tf.string.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         for url in urls {
             manager?.addDownload(urls: [url]) { _, err in
                 if let err {
-                    DispatchQueue.main.async {
-                        self.showAlert("Failed to add download", detail: err.localizedDescription)
-                    }
+                    DispatchQueue.main.async { self.alert("Failed", err.localizedDescription) }
                 }
             }
         }
     }
 
-    @objc private func openDownloadsFolderAction() {
+    @objc private func openFolderAction() {
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
         NSWorkspace.shared.open(dir)
     }
 
-    @objc private func pauseAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String else { return }
-        manager?.pause(gid: gid)
-    }
+    @objc private func quitAction() { NSApp.terminate(nil) }
 
-    @objc private func resumeAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String else { return }
-        manager?.resume(gid: gid)
-    }
-
-    @objc private func cancelAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String else { return }
-        manager?.cancel(gid: gid)
-    }
-
-    @objc private func revealAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String,
-              let path = manager?.downloads.first(where: { $0.gid == gid })?.primaryFilePath
-        else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-    }
-
-    @objc private func removeResultAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String else { return }
-        manager?.removeResult(gid: gid)
-    }
-
-    @objc private func retryAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String,
-              let dl = manager?.downloads.first(where: { $0.gid == gid })
-        else { return }
-        manager?.retry(download: dl)
-    }
-
-    @objc private func showErrorAction(_ sender: NSMenuItem) {
-        guard let gid = sender.representedObject as? String,
-              let dl = manager?.downloads.first(where: { $0.gid == gid })
-        else { return }
+    func showError(for dl: Download) {
         NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Download Failed"
-        alert.informativeText = "Error \(dl.errorCode ?? "?"): \(dl.errorMessage ?? "No details.")"
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Show Log")
-        if alert.runModal() == .alertSecondButtonReturn {
+        let a = NSAlert()
+        a.messageText = "Download Failed"
+        a.informativeText = "Error \(dl.errorCode ?? "?"): \(dl.errorMessage ?? "No details.")"
+        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Show Log")
+        if a.runModal() == .alertSecondButtonReturn {
             NSWorkspace.shared.open(DownloadManager.logFile)
         }
     }
 
-    @objc private func showLogAction(_ sender: NSMenuItem) {
-        NSWorkspace.shared.open(DownloadManager.logFile)
-    }
-
-    private func showAlert(_ msg: String, detail: String) {
+    private func alert(_ msg: String, _ detail: String) {
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
-        a.messageText = msg
-        a.informativeText = detail
-        a.runModal()
+        a.messageText = msg; a.informativeText = detail; a.runModal()
+    }
+
+    // MARK: - View factories
+
+    private func separator() -> NSBox {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        return box
+    }
+
+    private func textButton(_ title: String, action: Selector) -> NSButton {
+        let b = NSButton(title: title, target: self, action: action)
+        b.bezelStyle = .rounded
+        b.controlSize = .small
+        b.translatesAutoresizingMaskIntoConstraints = false
+        return b
+    }
+}
+
+// MARK: - NSTableViewDataSource / Delegate
+
+extension DownloadsViewController: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        items[row].isSectionHeader ? kHeaderHeight : kRowHeight
+    }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        switch items[row] {
+        case .sectionHeader(let title):
+            let id = NSUserInterfaceItemIdentifier("hdr")
+            let v = (tableView.makeView(withIdentifier: id, owner: nil) as? SectionHeaderView)
+                    ?? SectionHeaderView()
+            v.identifier = id
+            v.configure(title: title)
+            return v
+        case .download(let dl):
+            let id = NSUserInterfaceItemIdentifier("row")
+            let v = (tableView.makeView(withIdentifier: id, owner: nil) as? DownloadRowView)
+                    ?? DownloadRowView()
+            v.identifier = id
+            v.configure(with: dl)
+            wireActions(v, dl: dl)
+            return v
+        }
+    }
+
+    private func wireActions(_ v: DownloadRowView, dl: Download) {
+        let gid = dl.gid
+        switch dl.status {
+        case .active:
+            v.setActions(
+                primary:   { [weak self] in self?.manager?.pause(gid: gid) },
+                primarySymbol: "pause.circle.fill", primaryTint: .systemOrange, primaryTip: "Pause",
+                secondary: { [weak self] in self?.manager?.cancel(gid: gid) },
+                secondarySymbol: "xmark.circle.fill", secondaryTint: .systemRed, secondaryTip: "Cancel"
+            )
+        case .paused:
+            v.setActions(
+                primary:   { [weak self] in self?.manager?.resume(gid: gid) },
+                primarySymbol: "play.circle.fill", primaryTint: .systemGreen, primaryTip: "Resume",
+                secondary: { [weak self] in self?.manager?.cancel(gid: gid) },
+                secondarySymbol: "xmark.circle.fill", secondaryTint: .systemRed, secondaryTip: "Cancel"
+            )
+        case .waiting:
+            v.setActions(
+                primary:   { [weak self] in self?.manager?.cancel(gid: gid) },
+                primarySymbol: "xmark.circle.fill", primaryTint: .systemRed, primaryTip: "Remove",
+                secondary: nil, secondarySymbol: "", secondaryTint: .clear, secondaryTip: ""
+            )
+        case .complete:
+            v.setActions(
+                primary: { [weak self] in
+                    guard let path = self?.manager?.downloads.first(where: { $0.gid == gid })?.primaryFilePath
+                    else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                },
+                primarySymbol: "folder.fill", primaryTint: .systemBlue, primaryTip: "Reveal in Finder",
+                secondary: { [weak self] in self?.manager?.removeResult(gid: gid) },
+                secondarySymbol: "trash.fill", secondaryTint: .systemRed, secondaryTip: "Remove from list"
+            )
+        case .error:
+            v.setActions(
+                primary: { [weak self] in
+                    guard let dl = self?.manager?.downloads.first(where: { $0.gid == gid }) else { return }
+                    self?.manager?.retry(download: dl)
+                },
+                primarySymbol: "arrow.clockwise.circle.fill", primaryTint: .systemBlue, primaryTip: "Retry",
+                secondary: { [weak self] in self?.manager?.removeResult(gid: gid) },
+                secondarySymbol: "trash.fill", secondaryTint: .systemRed, secondaryTip: "Remove",
+                tertiary: { [weak self] in
+                    guard let dl = self?.manager?.downloads.first(where: { $0.gid == gid }) else { return }
+                    self?.showError(for: dl)
+                },
+                tertiarySymbol: "exclamationmark.circle.fill",
+                tertiaryTint: .systemOrange,
+                tertiaryTip: "Show Error"
+            )
+        case .removed:
+            v.setActions(primary: nil, primarySymbol: "", primaryTint: .clear, primaryTip: "",
+                         secondary: nil)
+        }
+    }
+}
+
+// MARK: - Helpers
+
+private extension ListItem {
+    var isSectionHeader: Bool {
+        if case .sectionHeader = self { return true }
+        return false
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
