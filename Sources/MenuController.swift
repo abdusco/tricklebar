@@ -196,13 +196,31 @@ final class MenuController: NSObject, NSMenuDelegate {
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Cancel")
 
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 420, height: 80))
-        let tf = NSTextView(frame: scroll.bounds)
-        tf.isEditable = true
-        tf.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        scroll.documentView = tf
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 440, height: 90))
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.borderType = .bezelBorder
+
+        let contentSize = scroll.contentSize
+        let tf = NSTextView(frame: NSRect(origin: .zero, size: contentSize))
+        tf.minSize = NSSize(width: 0, height: contentSize.height)
+        tf.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tf.isVerticallyResizable = true
+        tf.isHorizontallyResizable = false
+        tf.autoresizingMask = .width
+        tf.textContainer?.containerSize = NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        tf.textContainer?.widthTracksTextView = true
+        tf.isEditable = true
+        tf.isSelectable = true
+        tf.allowsUndo = true
+        tf.isRichText = false
+        tf.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        tf.textContainerInset = NSSize(width: 2, height: 4)
+        scroll.documentView = tf
         alert.accessoryView = scroll
+
+        // Without this the text view never becomes first responder and Cmd+V doesn't work.
+        alert.window.initialFirstResponder = tf
 
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
