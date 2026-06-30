@@ -15,6 +15,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 
         popover.contentViewController = contentVC
         popover.behavior = .transient
+        popover.animates = false
         popover.delegate = self
         popover.contentSize = NSSize(width: kPopoverWidth, height: 180)
         contentVC.popoverRef = popover
@@ -54,8 +55,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             popover.close()
         } else {
             NSApp.activate(ignoringOtherApps: true)
-            let sz = contentVC.preferredContentSize
-            if sz.width > 0 { popover.contentSize = sz }
+            popover.contentSize = contentVC.preferredContentSize
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
         }
     }
@@ -84,6 +84,7 @@ final class DownloadsViewController: NSViewController {
     init(manager: DownloadManager) {
         self.manager = manager
         super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: kPopoverWidth, height: 180)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -98,7 +99,7 @@ final class DownloadsViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         buildLayout()
-        update(with: [])
+        update(with: manager?.downloads ?? [])
     }
 
     // MARK: - Update (called on every poll; works while popover is open)
