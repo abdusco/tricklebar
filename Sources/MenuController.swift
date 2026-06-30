@@ -17,6 +17,9 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.delegate = self
 
+        _ = contentVC.view  // force viewDidLoad → recalcSize → preferredContentSize
+        popover.contentSize = contentVC.preferredContentSize
+
         if let btn = statusItem.button {
             btn.action = #selector(togglePopover(_:))
             btn.target = self
@@ -30,6 +33,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         let active = downloads.filter { $0.status == .active }
         updateButton(active: active.count, totalSpeed: active.reduce(0) { $0 + $1.downloadSpeed })
         contentVC.update(with: downloads)
+        popover.contentSize = contentVC.preferredContentSize
     }
 
     private func updateButton(active: Int, totalSpeed: Int64) {
@@ -51,6 +55,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             popover.close()
         } else {
             NSApp.activate(ignoringOtherApps: true)
+            popover.contentSize = contentVC.preferredContentSize
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
         }
     }
@@ -78,6 +83,7 @@ final class DownloadsViewController: NSViewController {
     init(manager: DownloadManager) {
         self.manager = manager
         super.init(nibName: nil, bundle: nil)
+        preferredContentSize = NSSize(width: kPopoverWidth, height: 200)
     }
     required init?(coder: NSCoder) { fatalError() }
 
