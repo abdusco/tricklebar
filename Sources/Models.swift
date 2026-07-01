@@ -59,6 +59,36 @@ struct Download {
 struct DlwatchConfig: Codable {
     var port: Int
     var secret: String
+    // User-adjustable settings; nil means "use the app default".
+    var downloadDir: String?
+    var maxConcurrentDownloads: Int?
+    var customOptions: String?
+
+    static let defaultMaxConcurrent = 5
+
+    static var defaultDownloadDir: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Downloads").path
+    }
+
+    var resolvedDownloadDir: String {
+        if let d = downloadDir, !d.isEmpty { return d }
+        return DlwatchConfig.defaultDownloadDir
+    }
+
+    var resolvedMaxConcurrent: Int {
+        maxConcurrentDownloads ?? DlwatchConfig.defaultMaxConcurrent
+    }
+
+    // Turn the free-form custom-options text into aria2c command-line args:
+    // one non-empty line each, with "--" prepended when a line lacks a leading dash.
+    var customOptionArgs: [String] {
+        (customOptions ?? "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { $0.hasPrefix("-") ? $0 : "--\($0)" }
+    }
 }
 
 func formatBytes(_ bytes: Int64) -> String {

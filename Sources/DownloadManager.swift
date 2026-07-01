@@ -3,6 +3,7 @@ import Darwin
 
 final class DownloadManager {
     private(set) var downloads: [Download] = []
+    private(set) var config: DlwatchConfig?
     var onUpdate: (() -> Void)?
 
     private var rpc: Aria2RPC?
@@ -22,6 +23,7 @@ final class DownloadManager {
     func start() {
         createDirs()
         let cfg = loadOrCreateConfig()
+        self.config = cfg
         let rpc = Aria2RPC(port: cfg.port, secret: cfg.secret)
         self.rpc = rpc
 
@@ -67,6 +69,12 @@ final class DownloadManager {
         return cfg
     }
 
+    private func saveConfig(_ cfg: DlwatchConfig) {
+        if let data = try? JSONEncoder().encode(cfg) {
+            try? data.write(to: DownloadManager.configFile)
+        }
+    }
+
     // Read existing config — used by CLI path
     static func readConfig() -> DlwatchConfig? {
         guard let data = try? Data(contentsOf: configFile),
@@ -110,27 +118,27 @@ final class DownloadManager {
             fputs("dlwatch: aria2c not found — install it via 'brew install aria2'\n", stderr)
             return
         }
-        let downloadsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Downloads").path
-
         var args = [
             "--enable-rpc=true",
             "--rpc-listen-all=false",
             "--rpc-listen-port=\(cfg.port)",
             "--rpc-secret=\(cfg.secret)",
             "--continue=true",
-            "--dir=\(downloadsDir)",
+            "--dir=\(cfg.resolvedDownloadDir)",
             "--save-session=\(DownloadManager.sessionFile.path)",
             "--save-session-interval=30",
             "--log=\(DownloadManager.logFile.path)",
             "--log-level=info",
             "--file-allocation=none",
             "--auto-file-renaming=true",
-            "--max-concurrent-downloads=5",
+            "--max-concurrent-downloads=\(cfg.resolvedMaxConcurrent)",
         ]
         if FileManager.default.fileExists(atPath: DownloadManager.sessionFile.path) {
             args.append("--input-file=\(DownloadManager.sessionFile.path)")
         }
+        // Custom options go last so, for any duplicate key, aria2c honors the user's
+        // value over the app default (later command-line occurrence wins).
+        args.append(contentsOf: cfg.customOptionArgs)
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: aria2cPath)
@@ -217,6 +225,45 @@ final class DownloadManager {
 
     // Flush the session so the on-disk state reflects the latest action.
     private func persistSession() { rpc?.saveSession { _ in } }
+
+    // MARK: - Settings
+
+    // Persist edited settings and apply them: dir + max-concurrent take effect
+    // instantly via changeGlobalOption; custom options are command-line args, so the
+    // daemon is relaunched when they change (downloads resume via session + --continue).
+    func applySettings(downloadDir: String?, maxConcurrent: Int, customOptions: String?) {
+        let previousCustom = config?.customOptions ?? ""
+        var cfg = config ?? loadOrCreateConfig()
+        cfg.downloadDir = downloadDir
+        cfg.maxConcurrentDownloads = maxConcurrent
+        cfg.customOptions = customOptions
+        saveConfig(cfg)
+        config = cfg
+
+        rpc?.changeGlobalOption([
+            "dir": cfg.resolvedDownloadDir,
+            "max-concurrent-downloads": String(cfg.resolvedMaxConcurrent),
+        ]) { _ in }
+
+        if (customOptions ?? "") != previousCustom {
+            restartDaemon()
+        }
+    }
+
+    private func restartDaemon() {
+        guard let cfg = config else { return }
+        pollTimer?.invalidate()
+        pollTimer = nil
+        rpc?.saveSessionSync()
+        aria2cProcess?.terminate()
+        aria2cProcess = nil
+        // Give the port a moment to free up before relaunching with the new args.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.launchAria2c(cfg) {
+                DispatchQueue.main.async { self?.startPolling() }
+            }
+        }
+    }
 
     func retry(download: Download) {
         guard let rpc, let uri = download.primaryURI else {

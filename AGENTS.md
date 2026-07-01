@@ -19,3 +19,9 @@
 - Replace NSMenu+submenu with NSPopover + NSTableView with real per-row action buttons
 - Popover updates live while open (no isOpen guard); poll writes directly into the table
 - Per-row icon buttons: Pause/Resume/Cancel for active, Reveal/Remove for completed, Retry/Remove/Show Error for failed
+- Right-click the status bar icon for a Quit menu; pad status speed to a fixed width so the menu bar doesn't jitter
+- Cmd+V must work in dialogs (accessory app installs an Edit menu so shortcuts reach the responder chain)
+- Persist aria2 session state: paused/queued downloads survive relaunch and show URL-derived filenames (not GIDs)
+- Two-line row status: line 1 = percent + downloaded/total, line 2 = speed + ETA
+- Custom URL scheme: `dlwatch://add-download?url=<encoded>` adds downloads (forwards to the running instance)
+- Settings button (gear) in the popover: choose download dir, set max active downloads, and a textarea of custom aria2c options that override the app defaults. dir + max apply live via changeGlobalOption; changing custom options relaunches the daemon (downloads resume via session + --continue). Settings persist in the config file.

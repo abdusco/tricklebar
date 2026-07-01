@@ -97,6 +97,7 @@ final class DownloadsViewController: NSViewController {
     private var items: [ListItem] = []
     weak var popoverRef: NSPopover?
     private var heightConstraint: NSLayoutConstraint!
+    private var settingsWC: SettingsWindowController?
 
     init(manager: DownloadManager) {
         self.manager = manager
@@ -189,7 +190,19 @@ final class DownloadsViewController: NSViewController {
         addBtn.action = #selector(addDownloadAction)
         addBtn.translatesAutoresizingMaskIntoConstraints = false
 
+        let settingsBtn = NSButton()
+        settingsBtn.image = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: "Settings")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+        settingsBtn.imageScaling = .scaleNone
+        settingsBtn.isBordered = false
+        settingsBtn.contentTintColor = .secondaryLabelColor
+        settingsBtn.toolTip = "Settings"
+        settingsBtn.target = self
+        settingsBtn.action = #selector(settingsAction)
+        settingsBtn.translatesAutoresizingMaskIntoConstraints = false
+
         topBar.addSubview(titleLabel)
+        topBar.addSubview(settingsBtn)
         topBar.addSubview(addBtn)
 
         let topSep = separator()
@@ -202,6 +215,10 @@ final class DownloadsViewController: NSViewController {
             addBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
             addBtn.widthAnchor.constraint(equalToConstant: 22),
             addBtn.heightAnchor.constraint(equalToConstant: 22),
+            settingsBtn.trailingAnchor.constraint(equalTo: addBtn.leadingAnchor, constant: -8),
+            settingsBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
+            settingsBtn.widthAnchor.constraint(equalToConstant: 22),
+            settingsBtn.heightAnchor.constraint(equalToConstant: 22),
             topSep.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
             topSep.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
             topSep.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
@@ -318,9 +335,16 @@ final class DownloadsViewController: NSViewController {
         }
     }
 
+    @objc private func settingsAction() {
+        popoverRef?.close()
+        guard let manager else { return }
+        if settingsWC == nil { settingsWC = SettingsWindowController(manager: manager) }
+        settingsWC?.show()
+    }
+
     @objc private func openFolderAction() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-        NSWorkspace.shared.open(dir)
+        let path = manager?.config?.resolvedDownloadDir ?? DlwatchConfig.defaultDownloadDir
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
     @objc private func quitAction() { NSApp.terminate(nil) }
