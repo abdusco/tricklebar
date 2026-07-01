@@ -84,7 +84,7 @@ private enum ListItem {
     case download(Download)
 }
 
-private let kRowHeight: CGFloat   = 62
+private let kRowHeight: CGFloat   = 74
 private let kHeaderHeight: CGFloat = 26
 private let kTopBarHeight: CGFloat  = 52
 private let kBottomBarHeight: CGFloat = 44

@@ -72,6 +72,14 @@ final class DownloadRowView: NSTableCellView {
         f.translatesAutoresizingMaskIntoConstraints = false
         return f
     }()
+    private let detailLabel2: NSTextField = {
+        let f = NSTextField(labelWithString: "")
+        f.font = .systemFont(ofSize: 11)
+        f.textColor = .secondaryLabelColor
+        f.lineBreakMode = .byTruncatingTail
+        f.translatesAutoresizingMaskIntoConstraints = false
+        return f
+    }()
     // Three icon buttons (tertiary may be hidden)
     private let btn1 = DownloadRowView.makeIconButton()
     private let btn2 = DownloadRowView.makeIconButton()
@@ -89,7 +97,7 @@ final class DownloadRowView: NSTableCellView {
     required init?(coder: NSCoder) { fatalError() }
 
     private func setup() {
-        for v in [iconView, nameLabel, progressBar, detailLabel, btn1, btn2, btn3] {
+        for v in [iconView, nameLabel, progressBar, detailLabel, detailLabel2, btn1, btn2, btn3] {
             addSubview(v)
         }
         btn1.target = self; btn1.action = #selector(tap1)
@@ -122,7 +130,7 @@ final class DownloadRowView: NSTableCellView {
             // Text area: between icon and btn3 (widest button layout)
             nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
             nameLabel.trailingAnchor.constraint(equalTo: btn3.leadingAnchor, constant: -8),
-            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 11),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 9),
             nameLabel.heightAnchor.constraint(equalToConstant: 16),
 
             progressBar.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
@@ -132,8 +140,13 @@ final class DownloadRowView: NSTableCellView {
 
             detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             detailLabel.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
-            detailLabel.topAnchor.constraint(equalTo: progressBar.bottomAnchor, constant: 4),
-            detailLabel.heightAnchor.constraint(equalToConstant: 14),
+            detailLabel.topAnchor.constraint(equalTo: progressBar.bottomAnchor, constant: 5),
+            detailLabel.heightAnchor.constraint(equalToConstant: 13),
+
+            detailLabel2.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            detailLabel2.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
+            detailLabel2.topAnchor.constraint(equalTo: detailLabel.bottomAnchor, constant: 2),
+            detailLabel2.heightAnchor.constraint(equalToConstant: 13),
         ])
     }
 
@@ -144,7 +157,8 @@ final class DownloadRowView: NSTableCellView {
         nameLabel.toolTip = dl.displayName
         toolTip = dl.displayName
         iconView.image = stateImage(dl.status)
-        detailLabel.stringValue = detailString(dl)
+        detailLabel.stringValue = detailLine1(dl)
+        detailLabel2.stringValue = detailLine2(dl)
 
         let showBar = (dl.status == .active || dl.status == .paused) && dl.totalLength > 0
         progressBar.isHidden = !showBar
@@ -199,21 +213,15 @@ final class DownloadRowView: NSTableCellView {
         return base.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
     }
 
-    private func detailString(_ dl: Download) -> String {
+    // Line 1: progress percentage + downloaded / total
+    private func detailLine1(_ dl: Download) -> String {
         switch dl.status {
-        case .active:
-            var parts: [String] = []
+        case .active, .paused:
             let pct = Int(dl.progress * 100)
-            parts.append("\(pct)%")
-            if dl.downloadSpeed > 0 { parts.append("↓ \(formatBytes(dl.downloadSpeed))/s") }
+            var parts = [dl.status == .paused ? "\(pct)% paused" : "\(pct)%"]
             if dl.totalLength > 0 {
                 parts.append("\(formatBytes(dl.completedLength)) / \(formatBytes(dl.totalLength))")
             }
-            if let eta = etaString(dl) { parts.append("ETA \(eta)") }
-            return parts.joined(separator: "  ·  ")
-        case .paused:
-            var parts = ["\(Int(dl.progress * 100))% paused"]
-            if dl.totalLength > 0 { parts.append("\(formatBytes(dl.completedLength)) / \(formatBytes(dl.totalLength))") }
             return parts.joined(separator: "  ·  ")
         case .waiting:
             return dl.totalLength > 0 ? formatBytes(dl.totalLength) : "Queued"
@@ -226,6 +234,15 @@ final class DownloadRowView: NSTableCellView {
         case .removed:
             return "Removed"
         }
+    }
+
+    // Line 2: download speed + ETA (active downloads only)
+    private func detailLine2(_ dl: Download) -> String {
+        guard dl.status == .active else { return "" }
+        var parts: [String] = []
+        if dl.downloadSpeed > 0 { parts.append("↓ \(formatBytes(dl.downloadSpeed))/s") }
+        if let eta = etaString(dl) { parts.append("ETA \(eta)") }
+        return parts.joined(separator: "  ·  ")
     }
 
     private func etaString(_ dl: Download) -> String? {
