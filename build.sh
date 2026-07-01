@@ -46,6 +46,17 @@ cat > "${APP}/Contents/Info.plist" << 'PLIST'
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>dev.abdus.dlwatch</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>dlwatch</string>
+            </array>
+        </dict>
+    </array>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>

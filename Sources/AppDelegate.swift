@@ -1,15 +1,43 @@
 import AppKit
+import Carbon
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     let manager = DownloadManager()
     private var popoverController: PopoverController!
 
+    // URLs received via the dlwatch:// scheme before the daemon is ready are held
+    // here and flushed once the first poll confirms aria2c is up.
+    private var pendingURLs: [String] = []
+    private var isReady = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Register early so a cold launch triggered by a dlwatch:// URL is caught.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:replyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Enforce single instance
+        // Enforce single instance. If LaunchServices spawned us for a dlwatch://
+        // URL while another instance owns the daemon, give the GetURL event a beat
+        // to arrive, forward it straight to the shared daemon, then quit — otherwise
+        // the URL would die with this duplicate instance.
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.abdus.dlwatch")
             .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
-        if !others.isEmpty { NSApp.terminate(nil); return }
+        if !others.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                if let self, !self.pendingURLs.isEmpty, let cfg = DownloadManager.readConfig() {
+                    let rpc = Aria2RPC(port: cfg.port, secret: cfg.secret)
+                    self.pendingURLs.forEach { _ = try? rpc.addUriSync(urls: [$0]) }
+                }
+                NSApp.terminate(nil)
+            }
+            return
+        }
 
         setupMainMenu()
 
@@ -20,8 +48,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.onUpdate = { [weak self] in
             guard let self else { return }
             self.popoverController.rebuild(with: self.manager.downloads)
+            // The first update means a poll succeeded, so the daemon is reachable.
+            if !self.isReady {
+                self.isReady = true
+                let queued = self.pendingURLs
+                self.pendingURLs = []
+                queued.forEach { self.manager.addDownload(urls: [$0]) { _, _ in } }
+            }
         }
         manager.start()
+    }
+
+    // MARK: - URL scheme: dlwatch://add-download?url=<encoded>
+
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, replyEvent: NSAppleEventDescriptor) {
+        guard let str = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let comps = URLComponents(string: str),
+              comps.scheme == "dlwatch",
+              comps.host == "add-download"
+        else { return }
+
+        // Support one or more ?url= params; queryItems decodes percent-encoding.
+        let urls = comps.queryItems?
+            .filter { $0.name == "url" }
+            .compactMap { $0.value }
+            .filter { !$0.isEmpty } ?? []
+        guard !urls.isEmpty else { return }
+
+        if isReady {
+            urls.forEach { manager.addDownload(urls: [$0]) { _, _ in } }
+        } else {
+            pendingURLs.append(contentsOf: urls)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
