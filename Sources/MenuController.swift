@@ -147,8 +147,12 @@ final class DownloadsViewController: NSViewController {
             ("FAILED",      .error),
         ]
         for (title, status) in order {
-            let group = downloads.filter { $0.status == status }
+            var group = downloads.filter { $0.status == status }
             guard !group.isEmpty else { continue }
+            // aria2's tellStopped returns results oldest-first (offset counts from the
+            // least-recently-stopped download), so reverse completed downloads to put
+            // the most recently finished one at the top of the section.
+            if status == .complete { group.reverse() }
             out.append(.sectionHeader(title))
             group.forEach { out.append(.download($0)) }
         }
