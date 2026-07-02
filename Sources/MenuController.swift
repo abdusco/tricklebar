@@ -49,9 +49,9 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             // Monospaced font + fixed-width right-aligned text keeps the status
             // item a constant width so the menu bar doesn't jiggle as speed changes.
             let raw = totalSpeed > 0 ? "\(formatBytes(totalSpeed))/s" : "\(active)"
-            let padded = " " + String(repeating: " ", count: max(0, 9 - raw.count)) + raw
+            let padded = String(repeating: " ", count: max(0, 9 - raw.count)) + raw
             btn.attributedTitle = NSAttributedString(string: padded, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
             ])
         } else {
             btn.imagePosition = .imageOnly
