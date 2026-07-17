@@ -50,6 +50,7 @@ enum CLIHandler {
             case "-i":  if let v = next() { inputFile = v }
             case "-j":  if let v = next() { globalOptions["max-concurrent-downloads"] = v }
             case "-Z", "--force-sequential": break
+            case "--pause": options["pause"] = "true"
             default:
                 if let v = strip(arg, "--dir=")                        { options["dir"] = v }
                 else if let v = strip(arg, "--out=")                   { options["out"] = v }
@@ -146,6 +147,7 @@ enum CLIHandler {
               --max-upload-limit=N
           -i, --input-file=FILE        One URL per line
           -Z, --force-sequential       (accepted, always sequential)
+              --pause                  Add download in paused state
           -h, --help
           -v, --version
         """)
