@@ -223,6 +223,12 @@ final class DownloadManager {
     func cancel(gid: String) { rpc?.remove(gid: gid) { [weak self] _ in self?.persistSession() } }
     func removeResult(gid: String) { rpc?.removeResult(gid: gid) { [weak self] _ in self?.persistSession() } }
 
+    func clearCompleted() {
+        for dl in downloads where dl.status == .complete {
+            removeResult(gid: dl.gid)
+        }
+    }
+
     // Flush the session so the on-disk state reflects the latest action.
     private func persistSession() { rpc?.saveSession { _ in } }
 

@@ -405,7 +405,11 @@ extension DownloadsViewController: NSTableViewDataSource, NSTableViewDelegate {
             let v = (tableView.makeView(withIdentifier: id, owner: nil) as? SectionHeaderView)
                     ?? SectionHeaderView()
             v.identifier = id
-            v.configure(title: title)
+            var onClearAll: (() -> Void)?
+            if title == "COMPLETED" {
+                onClearAll = { [weak self] in self?.manager?.clearCompleted() }
+            }
+            v.configure(title: title, onClearAll: onClearAll)
             return v
         case .download(let dl):
             let id = NSUserInterfaceItemIdentifier("row")

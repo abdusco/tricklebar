@@ -24,6 +24,17 @@ final class ProgressBarView: NSView {
 
 final class SectionHeaderView: NSTableCellView {
     private let label = NSTextField(labelWithString: "")
+    private let clearButton: NSButton = {
+        let b = NSButton(title: "Clear All", target: nil, action: nil)
+        b.isBordered = false
+        b.font = .systemFont(ofSize: 10, weight: .semibold)
+        b.contentTintColor = .secondaryLabelColor
+        b.translatesAutoresizingMaskIntoConstraints = false
+        b.isHidden = true
+        return b
+    }()
+
+    var onClearAll: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -31,15 +42,27 @@ final class SectionHeaderView: NSTableCellView {
         label.textColor = .tertiaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
+        addSubview(clearButton)
+        clearButton.target = self
+        clearButton.action = #selector(tapClearAll)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            clearButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            clearButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         textField = label
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    func configure(title: String) { label.stringValue = title }
+    func configure(title: String, onClearAll: (() -> Void)? = nil) {
+        label.stringValue = title
+        self.onClearAll = onClearAll
+        clearButton.isHidden = onClearAll == nil
+    }
+
+    @objc private func tapClearAll() { onClearAll?() }
 }
 
 // MARK: - Download row
