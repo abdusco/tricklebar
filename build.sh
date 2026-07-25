@@ -9,10 +9,22 @@ BINARY="${MACOS_DIR}/${BUNDLE_NAME}"
 ARCH="${ARCH:-$(uname -m)}"
 TARGET="${ARCH}-apple-macos13.0"
 SDK="$(xcrun --show-sdk-path)"
+ICON_SOURCE="Assets/AppIcon.png"
+ICONSET_DIR="$(mktemp -d)/AppIcon.iconset"
 
 echo "→ Cleaning…"
 rm -rf "${APP}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
+
+echo "→ Building app icon…"
+mkdir -p "${ICONSET_DIR}"
+for size in 16 32 128 256 512; do
+    sips -z "${size}" "${size}" "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_${size}x${size}.png" >/dev/null
+    double=$((size * 2))
+    sips -z "${double}" "${double}" "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
+rm -rf "$(dirname "${ICONSET_DIR}")"
 
 echo "→ Compiling (${TARGET})…"
 swiftc Sources/*.swift \
@@ -36,12 +48,14 @@ cat > "${APP}/Contents/Info.plist" << 'PLIST'
     <string>TrickleBar</string>
     <key>CFBundleExecutable</key>
     <string>TrickleBar</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
