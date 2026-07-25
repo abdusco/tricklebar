@@ -6,7 +6,7 @@ APP="${BUNDLE_NAME}.app"
 MACOS_DIR="${APP}/Contents/MacOS"
 RESOURCES_DIR="${APP}/Contents/Resources"
 BINARY="${MACOS_DIR}/${BUNDLE_NAME}"
-ARCH="$(uname -m)"
+ARCH="${ARCH:-$(uname -m)}"
 TARGET="${ARCH}-apple-macos13.0"
 SDK="$(xcrun --show-sdk-path)"
 

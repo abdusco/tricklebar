@@ -1,0 +1,82 @@
+name: Swift Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Build Swift application
+        run: |
+          chmod +x build.sh
+          export ARCH="${{ matrix.arch }}"
+          ./build.sh
+
+      - name: Package app for release
+        run: |
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent TrickleBar.app "release/TrickleBar-${{ matrix.arch }}.zip"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrickleBar-${{ matrix.arch }}
+          path: release/TrickleBar-${{ matrix.arch }}.zip
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries/
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          chmod +x .github/generate_changelog.sh
+          current_tag="${{ github.ref_name }}"
+          previous_tag=$(git tag --sort=-creatordate | awk -v cur="$current_tag" 'found { print; exit } $0 == cur { found=1 }')
+
+          if [ -n "$previous_tag" ]; then
+            range="${previous_tag}..${current_tag}"
+          else
+            range="$current_tag"
+          fi
+
+          {
+            echo "changelog<<EOF"
+            .github/generate_changelog.sh "$range"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: binaries/*
