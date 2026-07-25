@@ -1,8 +1,8 @@
-# AGENTS.md — dlwatch requirements log
+# AGENTS.md — TrickleBar requirements log
 
 ## Initial requirements
 - Swift app compilable with `swiftc` only (no SPM, no Xcode)
-- `build.sh` at repo root: compile + pack as `.app` bundle, bundle ID `dev.abdus.dlwatch`
+- `build.sh` at repo root: compile + pack as `.app` bundle, bundle ID `dev.abdus.tricklebar`
 - Menu bar app (LSUIElement, hides from Dock)
 - Runs aria2c in daemon mode, communicates via JSON-RPC
 - Shows active and completed downloads in menu
@@ -23,5 +23,5 @@
 - Cmd+V must work in dialogs (accessory app installs an Edit menu so shortcuts reach the responder chain)
 - Persist aria2 session state: paused/queued downloads survive relaunch and show URL-derived filenames (not GIDs)
 - Two-line row status: line 1 = percent + downloaded/total, line 2 = speed + ETA
-- Custom URL scheme: `dlwatch://add-download?url=<encoded>` adds downloads (forwards to the running instance)
+- Custom URL scheme: `tricklebar://add-download?url=<encoded>` adds downloads (forwards to the running instance)
 - Settings button (gear) in the popover: choose download dir, set max active downloads, and a textarea of custom aria2c options that override the app defaults. dir + max apply live via changeGlobalOption; changing custom options relaunches the daemon (downloads resume via session + --continue). Settings persist in the config file.

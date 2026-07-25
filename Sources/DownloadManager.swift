@@ -3,7 +3,7 @@ import Darwin
 
 final class DownloadManager {
     private(set) var downloads: [Download] = []
-    private(set) var config: DlwatchConfig?
+    private(set) var config: TrickleBarConfig?
     var onUpdate: (() -> Void)?
 
     private var rpc: Aria2RPC?
@@ -11,10 +11,10 @@ final class DownloadManager {
     private var pollTimer: Timer?
 
     static let configDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".config/dlwatch")
+        .appendingPathComponent(".config/tricklebar")
     static let configFile = configDir.appendingPathComponent("config")
     static let dataDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".local/share/dlwatch")
+        .appendingPathComponent(".local/share/tricklebar")
     static let sessionFile = dataDir.appendingPathComponent("session.txt")
     static let logFile = dataDir.appendingPathComponent("aria2c.log")
 
@@ -57,28 +57,28 @@ final class DownloadManager {
     }
 
     @discardableResult
-    private func loadOrCreateConfig() -> DlwatchConfig {
+    private func loadOrCreateConfig() -> TrickleBarConfig {
         if let data = try? Data(contentsOf: DownloadManager.configFile),
-           let cfg = try? JSONDecoder().decode(DlwatchConfig.self, from: data) {
+           let cfg = try? JSONDecoder().decode(TrickleBarConfig.self, from: data) {
             return cfg
         }
-        let cfg = DlwatchConfig(port: findFreePort(), secret: UUID().uuidString.replacingOccurrences(of: "-", with: ""))
+        let cfg = TrickleBarConfig(port: findFreePort(), secret: UUID().uuidString.replacingOccurrences(of: "-", with: ""))
         if let data = try? JSONEncoder().encode(cfg) {
             try? data.write(to: DownloadManager.configFile)
         }
         return cfg
     }
 
-    private func saveConfig(_ cfg: DlwatchConfig) {
+    private func saveConfig(_ cfg: TrickleBarConfig) {
         if let data = try? JSONEncoder().encode(cfg) {
             try? data.write(to: DownloadManager.configFile)
         }
     }
 
     // Read existing config — used by CLI path
-    static func readConfig() -> DlwatchConfig? {
+    static func readConfig() -> TrickleBarConfig? {
         guard let data = try? Data(contentsOf: configFile),
-              let cfg = try? JSONDecoder().decode(DlwatchConfig.self, from: data)
+              let cfg = try? JSONDecoder().decode(TrickleBarConfig.self, from: data)
         else { return nil }
         return cfg
     }
@@ -113,9 +113,9 @@ final class DownloadManager {
 
     // MARK: - aria2c process
 
-    private func launchAria2c(_ cfg: DlwatchConfig, completion: @escaping () -> Void) {
+    private func launchAria2c(_ cfg: TrickleBarConfig, completion: @escaping () -> Void) {
         guard let aria2cPath = findAria2cBinary() else {
-            fputs("dlwatch: aria2c not found — install it via 'brew install aria2'\n", stderr)
+            fputs("tricklebar: aria2c not found — install it via 'brew install aria2'\n", stderr)
             return
         }
         var args = [
@@ -151,7 +151,7 @@ final class DownloadManager {
             aria2cProcess = proc
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.2) { completion() }
         } catch {
-            fputs("dlwatch: failed to launch aria2c: \(error)\n", stderr)
+            fputs("tricklebar: failed to launch aria2c: \(error)\n", stderr)
         }
     }
 

@@ -36,7 +36,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        win.title = "dlwatch Settings"
+        win.title = "TrickleBar Settings"
         win.contentView = content
         win.isReleasedWhenClosed = false
         win.delegate = self
@@ -51,12 +51,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Layout
 
-    private func buildContentView(cfg: DlwatchConfig?) -> NSView {
+    private func buildContentView(cfg: TrickleBarConfig?) -> NSView {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 360))
 
         // ── Download folder ─────────────────────────────────────────────
         let dirTitle = sectionLabel("Download folder")
-        dirField.stringValue = cfg?.resolvedDownloadDir ?? DlwatchConfig.defaultDownloadDir
+        dirField.stringValue = cfg?.resolvedDownloadDir ?? TrickleBarConfig.defaultDownloadDir
         dirField.lineBreakMode = .byTruncatingMiddle
         dirField.isSelectable = true
         dirField.font = .systemFont(ofSize: 12)
@@ -69,7 +69,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // ── Max active downloads ────────────────────────────────────────
         let maxTitle = sectionLabel("Max active downloads")
-        let n = cfg?.resolvedMaxConcurrent ?? DlwatchConfig.defaultMaxConcurrent
+        let n = cfg?.resolvedMaxConcurrent ?? TrickleBarConfig.defaultMaxConcurrent
         let fmt = NumberFormatter()
         fmt.minimum = 1; fmt.maximum = 50; fmt.allowsFloats = false
         maxField.formatter = fmt

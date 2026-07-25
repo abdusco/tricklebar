@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-BUNDLE_NAME="dlwatch"
+BUNDLE_NAME="TrickleBar"
 APP="${BUNDLE_NAME}.app"
 MACOS_DIR="${APP}/Contents/MacOS"
 RESOURCES_DIR="${APP}/Contents/Resources"
@@ -29,13 +29,13 @@ cat > "${APP}/Contents/Info.plist" << 'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>dev.abdus.dlwatch</string>
+    <string>dev.abdus.tricklebar</string>
     <key>CFBundleName</key>
-    <string>dlwatch</string>
+    <string>TrickleBar</string>
     <key>CFBundleDisplayName</key>
-    <string>dlwatch</string>
+    <string>TrickleBar</string>
     <key>CFBundleExecutable</key>
-    <string>dlwatch</string>
+    <string>TrickleBar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
@@ -50,10 +50,10 @@ cat > "${APP}/Contents/Info.plist" << 'PLIST'
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>dev.abdus.dlwatch</string>
+            <string>dev.abdus.tricklebar</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>dlwatch</string>
+                <string>tricklebar</string>
             </array>
         </dict>
     </array>
@@ -73,4 +73,4 @@ echo "✓ Built ${APP}"
 echo ""
 echo "  Open app:   open ${APP}"
 echo "  CLI usage:  ${BINARY} https://example.com/file.zip"
-echo "  Add to PATH: sudo ln -sf \"\$(pwd)/${BINARY}\" /usr/local/bin/dlwatch"
+echo "  Add to PATH: sudo ln -sf \"\$(pwd)/${BINARY}\" /usr/local/bin/tricklebar"

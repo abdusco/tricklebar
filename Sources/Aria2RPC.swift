@@ -197,7 +197,7 @@ enum RPCError: LocalizedError {
         case .serialization: return "Failed to serialize request"
         case .parseError: return "Failed to parse response"
         case .unexpectedResult: return "Unexpected result type"
-        case .noConfig: return "No daemon config found — launch dlwatch.app first"
+        case .noConfig: return "No daemon config found — launch TrickleBar.app first"
         case .rpcError(let m): return m
         }
     }

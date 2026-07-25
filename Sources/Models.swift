@@ -56,7 +56,7 @@ struct Download {
     }
 }
 
-struct DlwatchConfig: Codable {
+struct TrickleBarConfig: Codable {
     var port: Int
     var secret: String
     // User-adjustable settings; nil means "use the app default".
@@ -73,11 +73,11 @@ struct DlwatchConfig: Codable {
 
     var resolvedDownloadDir: String {
         if let d = downloadDir, !d.isEmpty { return d }
-        return DlwatchConfig.defaultDownloadDir
+        return TrickleBarConfig.defaultDownloadDir
     }
 
     var resolvedMaxConcurrent: Int {
-        maxConcurrentDownloads ?? DlwatchConfig.defaultMaxConcurrent
+        maxConcurrentDownloads ?? TrickleBarConfig.defaultMaxConcurrent
     }
 
     // Turn the free-form custom-options text into aria2c command-line args:

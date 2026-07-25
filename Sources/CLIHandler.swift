@@ -17,10 +17,10 @@ enum CLIHandler {
         let args = Array(CommandLine.arguments.dropFirst())
 
         if args.contains("-h") || args.contains("--help") { printHelp(); return }
-        if args.contains("-v") || args.contains("--version") { print("dlwatch 1.0.0"); return }
+        if args.contains("-v") || args.contains("--version") { print("tricklebar 1.0.0"); return }
 
         guard let cfg = DownloadManager.readConfig() else {
-            fputs("dlwatch: no running daemon — open dlwatch.app first\n", stderr)
+            fputs("tricklebar: no running daemon — open TrickleBar.app first\n", stderr)
             exit(1)
         }
 
@@ -72,7 +72,7 @@ enum CLIHandler {
                 else if arg.hasPrefix("http://") || arg.hasPrefix("https://") ||
                         arg.hasPrefix("ftp://")  || arg.hasPrefix("magnet:")   { urls.append(arg) }
                 else if !arg.hasPrefix("-") { urls.append(arg) }
-                else { fputs("dlwatch: unknown option '\(arg)' (ignored)\n", stderr) }
+                else { fputs("tricklebar: unknown option '\(arg)' (ignored)\n", stderr) }
             }
             i += 1
         }
@@ -87,14 +87,14 @@ enum CLIHandler {
                     .filter { !$0.isEmpty && !$0.hasPrefix("#") }
                 urls.append(contentsOf: lines)
             } else {
-                fputs("dlwatch: cannot read input file '\(f)'\n", stderr)
+                fputs("tricklebar: cannot read input file '\(f)'\n", stderr)
             }
         }
 
         guard !urls.isEmpty else {
-            fputs("dlwatch: no URLs provided\n", stderr)
-            fputs("Usage: dlwatch [options] URL...\n", stderr)
-            fputs("       dlwatch --help\n", stderr)
+            fputs("tricklebar: no URLs provided\n", stderr)
+            fputs("Usage: tricklebar [options] URL...\n", stderr)
+            fputs("       tricklebar --help\n", stderr)
             exit(1)
         }
 
@@ -108,7 +108,7 @@ enum CLIHandler {
                 let gid = try rpc.addUriSync(urls: [url], options: options)
                 print(gid)
             } catch {
-                fputs("dlwatch: failed to add \(url): \(error.localizedDescription)\n", stderr)
+                fputs("tricklebar: failed to add \(url): \(error.localizedDescription)\n", stderr)
                 exitCode = 1
             }
         }
@@ -122,12 +122,12 @@ enum CLIHandler {
 
     private static func printHelp() {
         print("""
-        dlwatch — aria2c-compatible download manager
+        tricklebar — aria2c-compatible download manager
 
         Usage:
-          dlwatch [options] URL...     Add download(s) to running daemon
-          dlwatch -i FILE              Read URLs from file
-          open dlwatch.app             Launch menu bar interface
+          tricklebar [options] URL...     Add download(s) to running daemon
+          tricklebar -i FILE              Read URLs from file
+          open TrickleBar.app             Launch menu bar interface
 
         Options (subset of aria2c flags):
           -d, --dir=DIR                Download directory

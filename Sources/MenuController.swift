@@ -41,7 +41,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 
     private func updateButton(active: Int, totalSpeed: Int64) {
         guard let btn = statusItem?.button else { return }
-        let img = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: "dlwatch")
+        let img = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: "TrickleBar")
         img?.isTemplate = true
         btn.image = img
         if active > 0 {
@@ -62,7 +62,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     @objc private func togglePopover(_ sender: NSButton) {
         if let event = NSApp.currentEvent, event.type == .rightMouseUp {
             let menu = NSMenu()
-            let quit = NSMenuItem(title: "Quit dlwatch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+            let quit = NSMenuItem(title: "Quit TrickleBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
             menu.addItem(quit)
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
             return
@@ -347,7 +347,7 @@ final class DownloadsViewController: NSViewController {
     }
 
     @objc private func openFolderAction() {
-        let path = manager?.config?.resolvedDownloadDir ?? DlwatchConfig.defaultDownloadDir
+        let path = manager?.config?.resolvedDownloadDir ?? TrickleBarConfig.defaultDownloadDir
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 

@@ -6,13 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let manager = DownloadManager()
     private var popoverController: PopoverController!
 
-    // URLs received via the dlwatch:// scheme before the daemon is ready are held
+    // URLs received via the tricklebar:// scheme before the daemon is ready are held
     // here and flushed once the first poll confirms aria2c is up.
     private var pendingURLs: [String] = []
     private var isReady = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Register early so a cold launch triggered by a dlwatch:// URL is caught.
+        // Register early so a cold launch triggered by a tricklebar:// URL is caught.
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURLEvent(_:replyEvent:)),
@@ -22,11 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Enforce single instance. If LaunchServices spawned us for a dlwatch://
+        // Enforce single instance. If LaunchServices spawned us for a tricklebar://
         // URL while another instance owns the daemon, give the GetURL event a beat
         // to arrive, forward it straight to the shared daemon, then quit — otherwise
         // the URL would die with this duplicate instance.
-        let others = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.abdus.dlwatch")
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.abdus.tricklebar")
             .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
         if !others.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -59,12 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.start()
     }
 
-    // MARK: - URL scheme: dlwatch://add-download?url=<encoded>
+    // MARK: - URL scheme: tricklebar://add-download?url=<encoded>
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, replyEvent: NSAppleEventDescriptor) {
         guard let str = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let comps = URLComponents(string: str),
-              comps.scheme == "dlwatch",
+              comps.scheme == "tricklebar",
               comps.host == "add-download"
         else { return }
 
