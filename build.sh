@@ -9,6 +9,9 @@ BINARY="${MACOS_DIR}/${BUNDLE_NAME}"
 ARCH="${ARCH:-$(uname -m)}"
 TARGET="${ARCH}-apple-macos13.0"
 SDK="$(xcrun --show-sdk-path)"
+VERSION="${VERSION:-$(git describe --tags --exact-match 2>/dev/null || true)}"
+VERSION="${VERSION#v}"
+VERSION="${VERSION:-0.0.0}"
 ICON_SOURCE="Assets/AppIcon.png"
 ICONSET_DIR="$(mktemp -d)/AppIcon.iconset"
 
@@ -33,8 +36,8 @@ swiftc Sources/*.swift \
     -O \
     -o "${BINARY}"
 
-echo "→ Writing Info.plist…"
-cat > "${APP}/Contents/Info.plist" << 'PLIST'
+echo "→ Writing Info.plist (version ${VERSION})…"
+cat > "${APP}/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
     "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -53,9 +56,9 @@ cat > "${APP}/Contents/Info.plist" << 'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
