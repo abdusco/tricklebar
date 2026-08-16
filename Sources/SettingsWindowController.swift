@@ -41,12 +41,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         win.isReleasedWhenClosed = false
         win.delegate = self
         win.center()
-        win.initialFirstResponder = maxField
         window = win
         retainedSelf = self
 
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
+        // Leave the form unfocused until the user clicks a field or presses Tab.
+        win.makeFirstResponder(nil)
     }
 
     // MARK: - Layout

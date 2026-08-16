@@ -74,6 +74,9 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
         popover.contentSize = contentVC.preferredContentSize
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        // NSPopover otherwise assigns focus to the first button in its key-view
+        // loop. Start with neutral focus while still allowing Tab navigation.
+        popover.contentViewController?.view.window?.makeFirstResponder(nil)
     }
 }
 
