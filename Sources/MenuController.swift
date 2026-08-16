@@ -79,7 +79,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
 
 // MARK: - DownloadsViewController
 
-private enum ListItem {
+private enum ListItem: Equatable {
     case sectionHeader(String)
     case download(Download)
 }
@@ -132,8 +132,21 @@ final class DownloadsViewController: NSViewController {
     // MARK: - Update (called on every poll; works while popover is open)
 
     func update(with downloads: [Download]) {
-        items = buildItems(from: downloads)
-        if isViewLoaded { tableView.reloadData() }
+        let updatedItems = buildItems(from: downloads)
+        let structureChanged = !items.hasSameStructure(as: updatedItems)
+        let changedRows = structureChanged ? IndexSet() : items.changedRows(comparedTo: updatedItems)
+        items = updatedItems
+
+        if isViewLoaded {
+            if structureChanged {
+                tableView.reloadData()
+            } else if !changedRows.isEmpty {
+                tableView.reloadData(
+                    forRowIndexes: changedRows,
+                    columnIndexes: IndexSet(integer: 0)
+                )
+            }
+        }
         recalcSize()
     }
 
@@ -486,6 +499,27 @@ private extension ListItem {
     var isSectionHeader: Bool {
         if case .sectionHeader = self { return true }
         return false
+    }
+
+    func hasSameIdentity(as other: ListItem) -> Bool {
+        switch (self, other) {
+        case (.sectionHeader(let lhs), .sectionHeader(let rhs)):
+            return lhs == rhs
+        case (.download(let lhs), .download(let rhs)):
+            return lhs.gid == rhs.gid && lhs.status == rhs.status
+        default:
+            return false
+        }
+    }
+}
+
+private extension Array where Element == ListItem {
+    func hasSameStructure(as other: [ListItem]) -> Bool {
+        count == other.count && zip(self, other).allSatisfy { $0.hasSameIdentity(as: $1) }
+    }
+
+    func changedRows(comparedTo other: [ListItem]) -> IndexSet {
+        IndexSet(indices.filter { self[$0] != other[$0] })
     }
 }
 

@@ -4,14 +4,14 @@ enum DownloadStatus: String {
     case active, waiting, paused, complete, error, removed
 }
 
-struct DownloadFile {
+struct DownloadFile: Equatable {
     let path: String
     let length: Int64
     let completedLength: Int64
     let uris: [String]
 }
 
-struct Download {
+struct Download: Equatable {
     let gid: String
     let status: DownloadStatus
     let totalLength: Int64
