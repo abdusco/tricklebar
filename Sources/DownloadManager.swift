@@ -197,23 +197,38 @@ final class DownloadManager {
         guard let rpc, !pollInFlight else { return }
         pollInFlight = true
         let generation = pollGeneration
-        var active: [Download] = []
-        var waiting: [Download] = []
-        var stopped: [Download] = []
+        var active = downloads.filter { $0.status == .active }
+        var waiting = downloads.filter { $0.status == .waiting || $0.status == .paused }
+        var stopped = downloads.filter {
+            $0.status == .complete || $0.status == .error || $0.status == .removed
+        }
+        var activeSucceeded = false
+        var waitingSucceeded = false
+        var stoppedSucceeded = false
         let group = DispatchGroup()
 
         group.enter()
-        rpc.tellActive { d, _ in active = d; group.leave() }
+        rpc.tellActive { d, error in
+            if error == nil { active = d; activeSucceeded = true }
+            group.leave()
+        }
 
         group.enter()
-        rpc.tellWaiting { d, _ in waiting = d; group.leave() }
+        rpc.tellWaiting { d, error in
+            if error == nil { waiting = d; waitingSucceeded = true }
+            group.leave()
+        }
 
         group.enter()
-        rpc.tellStopped { d, _ in stopped = d; group.leave() }
+        rpc.tellStopped { d, error in
+            if error == nil { stopped = d; stoppedSucceeded = true }
+            group.leave()
+        }
 
         group.notify(queue: .main) { [weak self] in
             guard let self, self.pollGeneration == generation, self.rpc === rpc else { return }
             self.pollInFlight = false
+            guard activeSucceeded || waitingSucceeded || stoppedSucceeded else { return }
             self.downloads = active + waiting + stopped
             self.onUpdate?()
         }
