@@ -9,6 +9,8 @@ final class DownloadManager {
     private var rpc: Aria2RPC?
     private var aria2cProcess: Process?
     private var pollTimer: Timer?
+    private var pollInFlight = false
+    private var pollGeneration = 0
 
     static let configDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/tricklebar")
@@ -41,6 +43,8 @@ final class DownloadManager {
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
+        pollGeneration += 1
+        pollInFlight = false
         // Flush the session deterministically before SIGTERM so the latest
         // paused/queued state is captured even on a quick quit.
         rpc?.saveSessionSync()
@@ -181,6 +185,8 @@ final class DownloadManager {
     // MARK: - Polling
 
     private func startPolling() {
+        pollGeneration += 1
+        pollInFlight = false
         pollOnce()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.pollOnce()
@@ -188,7 +194,9 @@ final class DownloadManager {
     }
 
     private func pollOnce() {
-        guard let rpc else { return }
+        guard let rpc, !pollInFlight else { return }
+        pollInFlight = true
+        let generation = pollGeneration
         var active: [Download] = []
         var waiting: [Download] = []
         var stopped: [Download] = []
@@ -204,8 +212,10 @@ final class DownloadManager {
         rpc.tellStopped { d, _ in stopped = d; group.leave() }
 
         group.notify(queue: .main) { [weak self] in
-            self?.downloads = active + waiting + stopped
-            self?.onUpdate?()
+            guard let self, self.pollGeneration == generation, self.rpc === rpc else { return }
+            self.pollInFlight = false
+            self.downloads = active + waiting + stopped
+            self.onUpdate?()
         }
     }
 
@@ -260,6 +270,8 @@ final class DownloadManager {
         guard let cfg = config else { return }
         pollTimer?.invalidate()
         pollTimer = nil
+        pollGeneration += 1
+        pollInFlight = false
         rpc?.saveSessionSync()
         aria2cProcess?.terminate()
         aria2cProcess = nil
