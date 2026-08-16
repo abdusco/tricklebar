@@ -246,12 +246,24 @@ final class DownloadManager {
             }
             guard activeSucceeded || waitingSucceeded || stoppedSucceeded else { return }
 
+            let successfulGIDs = Set(
+                (activeSucceeded ? active : []).map(\.gid)
+                + (waitingSucceeded ? waiting : []).map(\.gid)
+                + (stoppedSucceeded ? stopped : []).map(\.gid)
+            )
+            if !activeSucceeded { active.removeAll { successfulGIDs.contains($0.gid) } }
+            if !waitingSucceeded { waiting.removeAll { successfulGIDs.contains($0.gid) } }
+            if !stoppedSucceeded { stopped.removeAll { successfulGIDs.contains($0.gid) } }
+
             let currentGIDs = Set(active.map(\.gid) + stopped.map(\.gid))
             let needsTransitionRefresh = activeSucceeded
                 && !previousActiveGIDs.subtracting(currentGIDs).isEmpty
             if needsTransitionRefresh { self.stoppedPollRequested = true }
 
-            self.downloads = active + waiting + stopped
+            var seenGIDs = Set<String>()
+            self.downloads = (active + waiting + stopped).reversed().filter {
+                seenGIDs.insert($0.gid).inserted
+            }.reversed()
             self.onUpdate?()
             if needsTransitionRefresh && !shouldPollStopped { self.pollOnce() }
         }
