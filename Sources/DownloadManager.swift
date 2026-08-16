@@ -11,6 +11,10 @@ final class DownloadManager {
     private var pollTimer: Timer?
     private var pollInFlight = false
     private var pollGeneration = 0
+    private var stoppedPollRequested = true
+    private var lastStoppedPollAt = Date.distantPast
+
+    private static let stoppedPollInterval: TimeInterval = 15
 
     static let configDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/tricklebar")
@@ -187,6 +191,7 @@ final class DownloadManager {
     private func startPolling() {
         pollGeneration += 1
         pollInFlight = false
+        stoppedPollRequested = true
         pollOnce()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.pollOnce()
@@ -202,6 +207,10 @@ final class DownloadManager {
         var stopped = downloads.filter {
             $0.status == .complete || $0.status == .error || $0.status == .removed
         }
+        let previousActiveGIDs = Set(active.map(\.gid))
+        let shouldPollStopped = stoppedPollRequested
+            || Date().timeIntervalSince(lastStoppedPollAt) >= Self.stoppedPollInterval
+        if shouldPollStopped { stoppedPollRequested = false }
         var activeSucceeded = false
         var waitingSucceeded = false
         var stoppedSucceeded = false
@@ -219,18 +228,32 @@ final class DownloadManager {
             group.leave()
         }
 
-        group.enter()
-        rpc.tellStopped { d, error in
-            if error == nil { stopped = d; stoppedSucceeded = true }
-            group.leave()
+        if shouldPollStopped {
+            group.enter()
+            rpc.tellStopped { d, error in
+                if error == nil { stopped = d; stoppedSucceeded = true }
+                group.leave()
+            }
         }
 
         group.notify(queue: .main) { [weak self] in
             guard let self, self.pollGeneration == generation, self.rpc === rpc else { return }
             self.pollInFlight = false
+            if stoppedSucceeded {
+                self.lastStoppedPollAt = Date()
+            } else if shouldPollStopped {
+                self.stoppedPollRequested = true
+            }
             guard activeSucceeded || waitingSucceeded || stoppedSucceeded else { return }
+
+            let currentGIDs = Set(active.map(\.gid) + stopped.map(\.gid))
+            let needsTransitionRefresh = activeSucceeded
+                && !previousActiveGIDs.subtracting(currentGIDs).isEmpty
+            if needsTransitionRefresh { self.stoppedPollRequested = true }
+
             self.downloads = active + waiting + stopped
             self.onUpdate?()
+            if needsTransitionRefresh && !shouldPollStopped { self.pollOnce() }
         }
     }
 
@@ -245,8 +268,19 @@ final class DownloadManager {
 
     func pause(gid: String) { rpc?.pause(gid: gid) { [weak self] _ in self?.persistSession() } }
     func resume(gid: String) { rpc?.unpause(gid: gid) { [weak self] _ in self?.persistSession() } }
-    func cancel(gid: String) { rpc?.remove(gid: gid) { [weak self] _ in self?.persistSession() } }
-    func removeResult(gid: String) { rpc?.removeResult(gid: gid) { [weak self] _ in self?.persistSession() } }
+    func cancel(gid: String) {
+        rpc?.remove(gid: gid) { [weak self] error in
+            self?.persistSession()
+            if error == nil { self?.requestStoppedPoll() }
+        }
+    }
+
+    func removeResult(gid: String) {
+        rpc?.removeResult(gid: gid) { [weak self] error in
+            self?.persistSession()
+            if error == nil { self?.requestStoppedPoll() }
+        }
+    }
 
     func clearCompleted() {
         for dl in downloads where dl.status == .complete {
@@ -256,6 +290,14 @@ final class DownloadManager {
 
     // Flush the session so the on-disk state reflects the latest action.
     private func persistSession() { rpc?.saveSession { _ in } }
+
+    private func requestStoppedPoll() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.stoppedPollRequested = true
+            self.pollOnce()
+        }
+    }
 
     // MARK: - Settings
 
@@ -303,7 +345,8 @@ final class DownloadManager {
             removeResult(gid: download.gid)
             return
         }
-        rpc.removeResult(gid: download.gid) { _ in
+        rpc.removeResult(gid: download.gid) { [weak self] _ in
+            self?.requestStoppedPoll()
             let opts: [String: Any] = ["dir": download.dir]
             rpc.addUri(urls: [uri], options: opts) { _, _ in }
         }
