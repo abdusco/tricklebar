@@ -347,7 +347,7 @@ final class DownloadManager {
         let expandedPath = (path as NSString).expandingTildeInPath
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: expandedPath)
-        proc.arguments = [download.status.rawValue, download.primaryFilePath ?? "", download.gid]
+        proc.arguments = [download.status.rawValue, download.primaryFilePath ?? "", download.gid, download.primaryURI ?? ""]
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
