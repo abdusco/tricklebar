@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // URLs received via the tricklebar:// scheme before the daemon is ready are held
     // here and flushed once the first poll confirms aria2c is up.
-    private var pendingURLs: [String] = []
+    private var pendingURLs: [(url: String, onDone: String?)] = []
     private var isReady = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -32,7 +32,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 if let self, !self.pendingURLs.isEmpty, let cfg = DownloadManager.readConfig() {
                     let rpc = Aria2RPC(port: cfg.port, secret: cfg.secret)
-                    self.pendingURLs.forEach { _ = try? rpc.addUriSync(urls: [$0]) }
+                    for item in self.pendingURLs {
+                        guard let gid = try? rpc.addUriSync(urls: [item.url]) else { continue }
+                        // This process is about to quit and never polls, so it can't run
+                        // the script itself — hand the mapping off to the owning instance
+                        // via DownloadManager.onDoneFile instead of its in-memory dict.
+                        if let onDone = item.onDone {
+                            DownloadManager.registerOnDoneScript(gid: gid, script: onDone)
+                        }
+                    }
                 }
                 NSApp.terminate(nil)
             }
@@ -53,13 +61,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.isReady = true
                 let queued = self.pendingURLs
                 self.pendingURLs = []
-                queued.forEach { self.manager.addDownload(urls: [$0]) { _, _ in } }
+                queued.forEach { item in
+                    self.manager.addDownload(urls: [item.url], onDone: item.onDone) { _, _ in }
+                }
             }
+        }
+        manager.onScriptFailure = { [weak self] name, output in
+            self?.showScriptFailure(name: name, output: output)
         }
         manager.start()
     }
 
-    // MARK: - URL scheme: tricklebar://add-download?url=<encoded>
+    // MARK: - URL scheme: tricklebar://add-download?url=<encoded>&on_done=<path>
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, replyEvent: NSAppleEventDescriptor) {
         guard let str = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
@@ -75,11 +88,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .filter { !$0.isEmpty } ?? []
         guard !urls.isEmpty else { return }
 
+        // Run when each download finishes (or fails); applies to every url in this event.
+        let onDone = comps.queryItems?.first { $0.name == "on_done" }?.value
+            .flatMap { $0.isEmpty ? nil : $0 }
+
         if isReady {
-            urls.forEach { manager.addDownload(urls: [$0]) { _, _ in } }
+            urls.forEach { manager.addDownload(urls: [$0], onDone: onDone) { _, _ in } }
         } else {
-            pendingURLs.append(contentsOf: urls)
+            pendingURLs.append(contentsOf: urls.map { (url: $0, onDone: onDone) })
         }
+    }
+
+    private func showScriptFailure(name: String, output: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "on_done script failed for \"\(name)\""
+        alert.informativeText = "The script exited with an error. Output below:"
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 160))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let tv = NSTextView(frame: NSRect(origin: .zero, size: scroll.contentSize))
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        tv.string = output
+        tv.autoresizingMask = .width
+        scroll.documentView = tv
+        alert.accessoryView = scroll
+
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
