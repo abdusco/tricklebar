@@ -14,6 +14,17 @@ final class DownloadManager {
     private var stoppedPollRequested = true
     private var lastStoppedPollAt = Date.distantPast
 
+    // GIDs with a pending on_done script (from tricklebar://add-download?...&on_done=).
+    // Popped once the script has been launched so it only ever runs once per download.
+    // In-memory fast path for the common case (this instance called addDownload itself);
+    // entries a *different* app instance registers (see registerOnDoneScript) arrive via
+    // onDoneFile instead, since that instance has no access to this in-memory dict.
+    private var onDoneScripts: [String: String] = [:]
+    private var lastOnDoneFileMTime = Date.distantPast
+    // Called on the main thread with (download display name, combined stdout+stderr)
+    // when an on_done script exits non-zero.
+    var onScriptFailure: ((String, String) -> Void)?
+
     private static let stoppedPollInterval: TimeInterval = 15
 
     static let configDir = FileManager.default.homeDirectoryForCurrentUser
@@ -21,6 +32,7 @@ final class DownloadManager {
     static let configFile = configDir.appendingPathComponent("config")
     static let dataDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".local/share/tricklebar")
+    static let onDoneFile = dataDir.appendingPathComponent("on_done.json")
     static let sessionFile = dataDir.appendingPathComponent("session.txt")
     static let logFile = dataDir.appendingPathComponent("aria2c.log")
 
@@ -264,15 +276,106 @@ final class DownloadManager {
             self.downloads = (active + waiting + stopped).reversed().filter {
                 seenGIDs.insert($0.gid).inserted
             }.reversed()
+            self.runDueOnDoneScripts()
             self.onUpdate?()
             if needsTransitionRefresh && !shouldPollStopped { self.pollOnce() }
         }
     }
 
+    // MARK: - on_done scripts
+
+    // Registers gid -> script for a download added by a *different* app instance
+    // (the short-lived duplicate launched to forward a tricklebar:// URL — see
+    // AppDelegate's single-instance handling). That instance has no access to the
+    // owning instance's in-memory onDoneScripts, so it hands the mapping off on disk.
+    static func registerOnDoneScript(gid: String, script: String) {
+        try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        withOnDoneFileLock { map in map[gid] = script }
+    }
+
+    @discardableResult
+    private static func withOnDoneFileLock<T>(_ body: (inout [String: String]) -> T) -> T {
+        let fd = open(onDoneFile.path, O_RDWR | O_CREAT, 0o600)
+        guard fd >= 0 else {
+            var empty: [String: String] = [:]
+            return body(&empty)
+        }
+        defer { close(fd) }
+        flock(fd, LOCK_EX)
+        defer { flock(fd, LOCK_UN) }
+
+        let data = (try? Data(contentsOf: onDoneFile)) ?? Data()
+        var map = (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+        let result = body(&map)
+        if let out = try? JSONEncoder().encode(map) {
+            try? out.write(to: onDoneFile, options: .atomic)
+        }
+        return result
+    }
+
+    // Cheap on every poll (a stat call); only pays for a locked read+write of
+    // onDoneFile when its mtime moved, i.e. another instance actually wrote to it.
+    private func absorbExternalOnDoneEntries() {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: Self.onDoneFile.path),
+              let mtime = attrs[.modificationDate] as? Date,
+              mtime > lastOnDoneFileMTime
+        else { return }
+
+        let drained = Self.withOnDoneFileLock { map -> [String: String] in
+            let copy = map
+            map.removeAll()
+            return copy
+        }
+        for (gid, script) in drained where onDoneScripts[gid] == nil {
+            onDoneScripts[gid] = script
+        }
+        // Re-stat: our own clearing write just bumped mtime again.
+        let attrsAfter = try? FileManager.default.attributesOfItem(atPath: Self.onDoneFile.path)
+        lastOnDoneFileMTime = (attrsAfter?[.modificationDate] as? Date) ?? Date()
+    }
+
+    private func runDueOnDoneScripts() {
+        absorbExternalOnDoneEntries()
+        guard !onDoneScripts.isEmpty else { return }
+        for dl in downloads where dl.status == .complete || dl.status == .error {
+            guard let script = onDoneScripts.removeValue(forKey: dl.gid) else { continue }
+            runOnDoneScript(script, for: dl)
+        }
+    }
+
+    private func runOnDoneScript(_ path: String, for download: Download) {
+        let expandedPath = (path as NSString).expandingTildeInPath
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: expandedPath)
+        proc.arguments = [download.status.rawValue, download.primaryFilePath ?? "", download.gid]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+
+        do {
+            try proc.run()
+        } catch {
+            let message = "Failed to launch on_done script '\(path)': \(error.localizedDescription)"
+            DispatchQueue.main.async { [weak self] in self?.onScriptFailure?(download.displayName, message) }
+            return
+        }
+
+        DispatchQueue.global().async { [weak self] in
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            proc.waitUntilExit()
+            guard proc.terminationStatus != 0 else { return }
+            let output = String(data: data, encoding: .utf8) ?? ""
+            DispatchQueue.main.async {
+                self?.onScriptFailure?(download.displayName, output.isEmpty ? "(no output)" : output)
+            }
+        }
+    }
+
     // MARK: - Actions
 
-    func addDownload(urls: [String], options: [String: Any] = [:], completion: @escaping (String?, Error?) -> Void) {
+    func addDownload(urls: [String], options: [String: Any] = [:], onDone: String? = nil, completion: @escaping (String?, Error?) -> Void) {
         rpc?.addUri(urls: urls, options: options) { [weak self] gid, err in
+            if let gid, let onDone { self?.onDoneScripts[gid] = onDone }
             self?.persistSession()
             completion(gid, err)
         }
