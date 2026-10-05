@@ -45,17 +45,38 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         img?.isTemplate = true
         btn.image = img
         if active > 0 {
-            btn.imagePosition = .imageLeft
-            // Monospaced font + fixed-width right-aligned text keeps the status
-            // item a constant width so the menu bar doesn't jiggle as speed changes.
-            let raw = totalSpeed > 0 ? "\(formatBytes(totalSpeed))/s" : "\(active)"
-            let padded = String(repeating: " ", count: max(0, 9 - raw.count)) + raw
-            btn.attributedTitle = NSAttributedString(string: padded, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-            ])
-        } else {
+            statusItem?.length = 62
             btn.imagePosition = .imageOnly
             btn.attributedTitle = NSAttributedString(string: "")
+            // Stack the value and unit in a fixed-width item to save space
+            // without shifting neighboring menu bar items as the speed changes.
+            let speed = formatBytes(totalSpeed).split(separator: " ")
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .right
+            paragraph.minimumLineHeight = 10
+            paragraph.maximumLineHeight = 10
+            let text = NSAttributedString(string: "\(speed[0])\n\(speed[1])/s", attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .medium),
+                .foregroundColor: NSColor.black,
+                .paragraphStyle: paragraph
+            ])
+            // Use the native button image so its entire area remains clickable.
+            // The icon and two-line text share the same vertical center.
+            let image = NSImage(size: NSSize(width: 54, height: 22), flipped: false) { rect in
+                img?.draw(in: NSRect(x: 0, y: rect.midY - 9, width: 18, height: 18))
+                text.draw(with: NSRect(x: 22, y: rect.midY - 10, width: 32, height: 20),
+                          options: [.usesLineFragmentOrigin])
+                return true
+            }
+            image.isTemplate = true
+            btn.image = image
+            btn.setAccessibilityLabel("TrickleBar, \(formatBytes(totalSpeed)) per second, \(active) active downloads")
+        } else {
+            statusItem?.length = NSStatusItem.variableLength
+            btn.imagePosition = .imageOnly
+            btn.alignment = .center
+            btn.attributedTitle = NSAttributedString(string: "")
+            btn.setAccessibilityLabel("TrickleBar")
         }
     }
 
