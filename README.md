@@ -1,5 +1,9 @@
 # TrickleBar
 
+<p align="center">
+  <img src="Assets/AppIcon.svg" alt="TrickleBar app icon" width="256" height="256">
+</p>
+
 A lightweight macOS menu bar download manager, backed by `aria2c`.
 
 TrickleBar runs an `aria2c` daemon in the background and gives you a menu bar
