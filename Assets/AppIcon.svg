@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>Droplet download logo</title>
+  <desc>A four-band blue droplet with an optically balanced white download arrow.</desc>
+  <defs>
+    <clipPath id="droplet">
+      <path d="M248 36Q256 24 264 36C306 91 363 155 401 223C422 261 432 295 432 328C432 413 354 480 256 480C158 480 80 413 80 328C80 295 90 261 111 223C149 155 206 91 248 36Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#droplet)">
+    <path fill="#082C56" d="M64 16H448V496H64Z"/>
+    <path fill="#1768A5" d="M64 16H448V324C404 371 334 398 256 398C178 398 108 371 64 324Z"/>
+    <path fill="#00B5D4" d="M64 16H448V229C404 278 334 306 256 306C178 306 108 278 64 229Z"/>
+    <path fill="#6AD5E5" d="M64 16H448V115C404 172 334 198 256 198C178 198 108 172 64 115Z"/>
+  </g>
+  <path d="M256 214V384M198 326L256 384L314 326" stroke="#FFF" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
