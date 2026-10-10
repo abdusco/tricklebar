@@ -17,8 +17,8 @@ subset of `aria2c`-compatible flags for easy migration.
 - Pause / resume / cancel / retry / remove per download
 - Reveal completed files in Finder
 - Failed downloads show error details and logs
-- Settings for download directory, max concurrent downloads, and custom
-  aria2c options
+- Settings for download directory, max concurrent downloads, custom aria2c
+  options, and the aria2c binary (with detected path and version)
 - Custom URL scheme (`tricklebar://add-download?url=<encoded>`) for adding
   downloads from other apps
 - CLI usable as a drop-in for common `aria2c` invocations
@@ -70,6 +70,10 @@ tricklebar --help
 ```
 
 Run `tricklebar --help` for the full list of supported flags.
+
+Settings shows the detected aria2c executable and its version. Use **Choose…**
+to select another executable, or **Use Default** to return to automatic discovery.
+Save Changes persists the choice and restarts aria2c with the saved download session.
 
 ## Releases
 

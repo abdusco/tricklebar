@@ -25,3 +25,4 @@
 - Two-line row status: line 1 = percent + downloaded/total, line 2 = speed + ETA
 - Custom URL scheme: `tricklebar://add-download?url=<encoded>` adds downloads (forwards to the running instance)
 - Settings button (gear) in the popover: choose download dir, set max active downloads, and a textarea of custom aria2c options that override the app defaults. dir + max apply live via changeGlobalOption; changing custom options relaunches the daemon (downloads resume via session + --continue). Settings persist in the config file.
+- Settings shows the detected aria2c binary path and version. Users can choose an executable or restore automatic discovery; the choice persists, and saving a binary change restarts aria2c with the saved download session.

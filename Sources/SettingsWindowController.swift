@@ -7,6 +7,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let maxField = NSTextField(string: "")
     private let maxStepper = NSStepper()
     private let optionsView = NSTextView()
+    private let binaryPathField = NSTextField(labelWithString: "")
+    private let binaryVersionField = NSTextField(labelWithString: "")
+    private let defaultBinaryButton = NSButton(title: "Use Default", target: nil, action: nil)
+    private let saveButton = NSButton(title: "Save Changes", target: nil, action: nil)
+    private var selectedBinaryPath: String?
+    private var binaryCheckGeneration = 0
     private var retainedSelf: SettingsWindowController?
 
     init(manager: DownloadManager) {
@@ -20,7 +26,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 550),
+        selectedBinaryPath = manager?.config?.aria2cPath
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 700),
                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.title = "TrickleBar Settings"
         win.titlebarAppearsTransparent = true
@@ -34,6 +41,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
         win.makeFirstResponder(nil)
+        refreshBinary()
     }
 
     private func label(_ title: String, size: CGFloat = 13, weight: NSFont.Weight = .regular,
@@ -46,7 +54,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     private func buildContentView(cfg: TrickleBarConfig?) -> NSView {
-        let root = SettingsBackground(frame: NSRect(x: 0, y: 0, width: 540, height: 550))
+        let root = SettingsBackground(frame: NSRect(x: 0, y: 0, width: 540, height: 700))
         let downloadsTitle = label("Downloads", size: 14, weight: .semibold)
         let downloadsGroup = SettingsPanel()
         downloadsGroup.translatesAutoresizingMaskIntoConstraints = false
@@ -97,6 +105,37 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         maxStepper.setAccessibilityLabel("Adjust maximum active downloads")
 
         let advancedTitle = label("Advanced", size: 14, weight: .semibold)
+        let binaryGroup = SettingsPanel()
+        binaryGroup.translatesAutoresizingMaskIntoConstraints = false
+        let binaryTitle = label("aria2c binary", size: 14)
+        binaryPathField.font = .systemFont(ofSize: 12)
+        binaryPathField.textColor = .secondaryLabelColor
+        binaryPathField.lineBreakMode = .byTruncatingMiddle
+        binaryPathField.isSelectable = true
+        binaryPathField.translatesAutoresizingMaskIntoConstraints = false
+        binaryPathField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let chooseBinary = NSButton(title: "Choose…", target: self, action: #selector(chooseBinaryAction))
+        chooseBinary.bezelStyle = .rounded
+        chooseBinary.controlSize = .small
+        chooseBinary.image = interfaceSymbol("folder", size: 13, description: "Choose aria2c binary")
+        chooseBinary.imagePosition = .imageLeading
+        chooseBinary.translatesAutoresizingMaskIntoConstraints = false
+        let binaryDivider = NSBox()
+        binaryDivider.boxType = .separator
+        binaryDivider.translatesAutoresizingMaskIntoConstraints = false
+        let versionTitle = label("Version", size: 14)
+        binaryVersionField.font = .systemFont(ofSize: 12)
+        binaryVersionField.textColor = .secondaryLabelColor
+        binaryVersionField.lineBreakMode = .byTruncatingTail
+        binaryVersionField.isSelectable = true
+        binaryVersionField.translatesAutoresizingMaskIntoConstraints = false
+        binaryVersionField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        defaultBinaryButton.target = self
+        defaultBinaryButton.action = #selector(useDefaultBinary)
+        defaultBinaryButton.bezelStyle = .rounded
+        defaultBinaryButton.controlSize = .small
+        defaultBinaryButton.translatesAutoresizingMaskIntoConstraints = false
+        let binaryHint = label("Changing the binary restarts aria2c and resumes downloads.", size: 12, color: .secondaryLabelColor)
         let optionsGroup = SettingsPanel()
         optionsGroup.translatesAutoresizingMaskIntoConstraints = false
         let optionsTitle = label("Custom aria2c options", size: 14)
@@ -142,18 +181,23 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         cancel.bezelStyle = .rounded
         cancel.keyEquivalent = "\u{1b}"
         cancel.translatesAutoresizingMaskIntoConstraints = false
-        let save = NSButton(title: "Save Changes", target: self, action: #selector(saveAction))
+        let save = saveButton
+        save.target = self
+        save.action = #selector(saveAction)
         save.bezelStyle = .rounded
         save.keyEquivalent = "\r"
         save.translatesAutoresizingMaskIntoConstraints = false
 
-        for v in [downloadsTitle, downloadsGroup, queueHint, advancedTitle, optionsGroup, optionsHint, cancel, save] {
+        for v in [downloadsTitle, downloadsGroup, queueHint, advancedTitle, binaryGroup, binaryHint, optionsGroup, optionsHint, cancel, save] {
             root.addSubview(v)
         }
         for v in [folderTitle, dirField, choose, divider, queueTitle, maxField, maxStepper] {
             downloadsGroup.addSubview(v)
         }
         for v in [optionsTitle, terminal, optionsDivider, scroll] { optionsGroup.addSubview(v) }
+        for v in [binaryTitle, binaryPathField, chooseBinary, binaryDivider, versionTitle, binaryVersionField, defaultBinaryButton] {
+            binaryGroup.addSubview(v)
+        }
         NSLayoutConstraint.activate([
             downloadsTitle.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
             downloadsTitle.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
@@ -183,7 +227,32 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             queueHint.leadingAnchor.constraint(equalTo: downloadsTitle.leadingAnchor),
             advancedTitle.topAnchor.constraint(equalTo: queueHint.bottomAnchor, constant: 28),
             advancedTitle.leadingAnchor.constraint(equalTo: downloadsTitle.leadingAnchor),
-            optionsGroup.topAnchor.constraint(equalTo: advancedTitle.bottomAnchor, constant: 12),
+            binaryGroup.topAnchor.constraint(equalTo: advancedTitle.bottomAnchor, constant: 12),
+            binaryGroup.leadingAnchor.constraint(equalTo: downloadsGroup.leadingAnchor),
+            binaryGroup.trailingAnchor.constraint(equalTo: downloadsGroup.trailingAnchor),
+            binaryGroup.heightAnchor.constraint(equalToConstant: 114),
+            binaryTitle.topAnchor.constraint(equalTo: binaryGroup.topAnchor, constant: 15),
+            binaryTitle.leadingAnchor.constraint(equalTo: binaryGroup.leadingAnchor, constant: 14),
+            binaryPathField.topAnchor.constraint(equalTo: binaryTitle.bottomAnchor, constant: 5),
+            binaryPathField.leadingAnchor.constraint(equalTo: binaryTitle.leadingAnchor),
+            binaryPathField.trailingAnchor.constraint(equalTo: chooseBinary.leadingAnchor, constant: -16),
+            chooseBinary.trailingAnchor.constraint(equalTo: binaryGroup.trailingAnchor, constant: -14),
+            chooseBinary.centerYAnchor.constraint(equalTo: binaryGroup.topAnchor, constant: 34),
+            chooseBinary.widthAnchor.constraint(equalToConstant: 90),
+            binaryDivider.topAnchor.constraint(equalTo: binaryGroup.topAnchor, constant: 72),
+            binaryDivider.leadingAnchor.constraint(equalTo: binaryTitle.leadingAnchor),
+            binaryDivider.trailingAnchor.constraint(equalTo: chooseBinary.trailingAnchor),
+            versionTitle.leadingAnchor.constraint(equalTo: binaryTitle.leadingAnchor),
+            versionTitle.centerYAnchor.constraint(equalTo: binaryGroup.topAnchor, constant: 93),
+            binaryVersionField.leadingAnchor.constraint(equalTo: versionTitle.trailingAnchor, constant: 16),
+            binaryVersionField.centerYAnchor.constraint(equalTo: versionTitle.centerYAnchor),
+            binaryVersionField.trailingAnchor.constraint(equalTo: defaultBinaryButton.leadingAnchor, constant: -12),
+            defaultBinaryButton.trailingAnchor.constraint(equalTo: chooseBinary.trailingAnchor),
+            defaultBinaryButton.centerYAnchor.constraint(equalTo: versionTitle.centerYAnchor),
+            defaultBinaryButton.widthAnchor.constraint(equalToConstant: 90),
+            binaryHint.topAnchor.constraint(equalTo: binaryGroup.bottomAnchor, constant: 10),
+            binaryHint.leadingAnchor.constraint(equalTo: advancedTitle.leadingAnchor),
+            optionsGroup.topAnchor.constraint(equalTo: binaryHint.bottomAnchor, constant: 16),
             optionsGroup.leadingAnchor.constraint(equalTo: downloadsGroup.leadingAnchor),
             optionsGroup.trailingAnchor.constraint(equalTo: downloadsGroup.trailingAnchor),
             optionsGroup.heightAnchor.constraint(equalToConstant: 168),
@@ -242,14 +311,70 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let opts = optionsView.string
         manager?.applySettings(downloadDir: dir.isEmpty ? nil : dir,
                                maxConcurrent: min(max(maxField.integerValue, 1), 50),
-                               customOptions: opts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : opts)
+                               customOptions: opts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : opts,
+                               aria2cPath: selectedBinaryPath)
         window?.close()
     }
 
     @objc private func cancelAction() { window?.close() }
 
     func windowWillClose(_ notification: Notification) {
+        binaryCheckGeneration += 1
         window = nil
         retainedSelf = nil
+    }
+
+    @objc private func chooseBinaryAction() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = true
+        panel.message = "Choose the aria2c executable."
+        panel.prompt = "Choose Binary"
+        if let path = Aria2Binary.resolve(customPath: selectedBinaryPath) {
+            panel.directoryURL = URL(fileURLWithPath: path).deletingLastPathComponent()
+        }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.selectedBinaryPath = url.path
+            self?.refreshBinary()
+        }
+    }
+
+    @objc private func useDefaultBinary() {
+        selectedBinaryPath = nil
+        refreshBinary()
+    }
+
+    private func refreshBinary() {
+        binaryCheckGeneration += 1
+        let generation = binaryCheckGeneration
+        defaultBinaryButton.isEnabled = selectedBinaryPath != nil
+        saveButton.isEnabled = false
+        let currentPath = selectedBinaryPath == manager?.config?.aria2cPath ? manager?.aria2cBinaryPath : nil
+        let path = currentPath ?? Aria2Binary.resolve(customPath: selectedBinaryPath)
+        binaryPathField.stringValue = path ?? "Not found — choose an aria2c binary"
+        binaryPathField.toolTip = path
+        binaryVersionField.stringValue = path == nil ? "Unavailable" : "Checking…"
+        binaryVersionField.textColor = .secondaryLabelColor
+        guard let path else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try Aria2Binary.version(at: path) }
+            DispatchQueue.main.async {
+                guard let self, self.window != nil, self.binaryCheckGeneration == generation else { return }
+                switch result {
+                case .success(let version):
+                    self.binaryVersionField.stringValue = version
+                    self.binaryVersionField.toolTip = nil
+                    self.saveButton.isEnabled = true
+                case .failure(let error):
+                    self.binaryVersionField.stringValue = error.localizedDescription
+                    self.binaryVersionField.toolTip = error.localizedDescription
+                    self.binaryVersionField.textColor = .systemRed
+                }
+            }
+        }
     }
 }

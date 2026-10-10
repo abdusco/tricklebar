@@ -63,6 +63,7 @@ struct TrickleBarConfig: Codable {
     var downloadDir: String?
     var maxConcurrentDownloads: Int?
     var customOptions: String?
+    var aria2cPath: String?
 
     static let defaultMaxConcurrent = 5
 

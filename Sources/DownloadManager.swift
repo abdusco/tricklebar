@@ -4,6 +4,7 @@ import Darwin
 final class DownloadManager {
     private(set) var downloads: [Download] = []
     private(set) var config: TrickleBarConfig?
+    private(set) var aria2cBinaryPath: String?
     var onUpdate: (() -> Void)?
 
     private var rpc: Aria2RPC?
@@ -42,6 +43,7 @@ final class DownloadManager {
         createDirs()
         let cfg = loadOrCreateConfig()
         self.config = cfg
+        aria2cBinaryPath = Aria2Binary.resolve(customPath: cfg.aria2cPath)
         let rpc = Aria2RPC(port: cfg.port, secret: cfg.secret)
         self.rpc = rpc
 
@@ -134,7 +136,8 @@ final class DownloadManager {
     // MARK: - aria2c process
 
     private func launchAria2c(_ cfg: TrickleBarConfig, completion: @escaping () -> Void) {
-        guard let aria2cPath = findAria2cBinary() else {
+        guard let aria2cPath = Aria2Binary.resolve(customPath: cfg.aria2cPath),
+              FileManager.default.isExecutableFile(atPath: aria2cPath) else {
             fputs("tricklebar: aria2c not found — install it via 'brew install aria2'\n", stderr)
             return
         }
@@ -168,34 +171,12 @@ final class DownloadManager {
 
         do {
             try proc.run()
+            aria2cBinaryPath = aria2cPath
             aria2cProcess = proc
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.2) { completion() }
         } catch {
             fputs("tricklebar: failed to launch aria2c: \(error)\n", stderr)
         }
-    }
-
-    private func findAria2cBinary() -> String? {
-        let candidates = [
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".local/bin/aria2c").path,
-            "/opt/homebrew/bin/aria2c",
-            "/usr/local/bin/aria2c",
-            "/usr/bin/aria2c",
-        ]
-        for p in candidates where FileManager.default.isExecutableFile(atPath: p) { return p }
-
-        let which = Process()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = ["aria2c"]
-        let pipe = Pipe()
-        which.standardOutput = pipe
-        which.standardError = FileHandle.nullDevice
-        try? which.run()
-        which.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return out.isEmpty ? nil : out
     }
 
     // MARK: - Polling
@@ -417,14 +398,16 @@ final class DownloadManager {
     // MARK: - Settings
 
     // Persist edited settings and apply them: dir + max-concurrent take effect
-    // instantly via changeGlobalOption; custom options are command-line args, so the
-    // daemon is relaunched when they change (downloads resume via session + --continue).
-    func applySettings(downloadDir: String?, maxConcurrent: Int, customOptions: String?) {
+    // instantly via changeGlobalOption; binary and custom option changes relaunch
+    // the daemon (downloads resume via session + --continue).
+    func applySettings(downloadDir: String?, maxConcurrent: Int, customOptions: String?, aria2cPath: String?) {
         let previousCustom = config?.customOptions ?? ""
+        let previousBinary = config?.aria2cPath
         var cfg = config ?? loadOrCreateConfig()
         cfg.downloadDir = downloadDir
         cfg.maxConcurrentDownloads = maxConcurrent
         cfg.customOptions = customOptions
+        cfg.aria2cPath = aria2cPath
         saveConfig(cfg)
         config = cfg
 
@@ -433,7 +416,7 @@ final class DownloadManager {
             "max-concurrent-downloads": String(cfg.resolvedMaxConcurrent),
         ]) { _ in }
 
-        if (customOptions ?? "") != previousCustom {
+        if (customOptions ?? "") != previousCustom || aria2cPath != previousBinary {
             restartDaemon()
         }
     }
@@ -445,10 +428,17 @@ final class DownloadManager {
         pollGeneration += 1
         pollInFlight = false
         rpc?.saveSessionSync()
-        aria2cProcess?.terminate()
+        let previousProcess = aria2cProcess
+        if let previousProcess, previousProcess.isRunning {
+            previousProcess.terminate()
+        } else {
+            // A daemon recovered after an app crash has no Process handle.
+            _ = try? rpc?.callSync(method: "aria2.forceShutdown", params: [])
+        }
         aria2cProcess = nil
         // Give the port a moment to free up before relaunching with the new args.
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            previousProcess?.waitUntilExit()
             self?.launchAria2c(cfg) {
                 DispatchQueue.main.async { self?.startPolling() }
             }
