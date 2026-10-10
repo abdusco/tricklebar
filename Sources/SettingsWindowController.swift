@@ -1,18 +1,12 @@
 import AppKit
 
-// A small, code-built settings form shown in its own window. Kept separate from the
-// popover so the folder picker (NSOpenPanel) isn't nested inside a modal alert.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private weak var manager: DownloadManager?
     private var window: NSWindow?
-
-    // Controls
     private let dirField = NSTextField(labelWithString: "")
     private let maxField = NSTextField(string: "")
     private let maxStepper = NSStepper()
     private let optionsView = NSTextView()
-
-    // Retain self while the window is open so callbacks stay alive.
     private var retainedSelf: SettingsWindowController?
 
     init(manager: DownloadManager) {
@@ -26,181 +20,233 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-
-        let cfg = manager?.config
-        let content = buildContentView(cfg: cfg)
-
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 550),
+                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.title = "TrickleBar Settings"
-        win.contentView = content
+        win.titlebarAppearsTransparent = true
+        win.backgroundColor = .controlBackgroundColor
+        win.contentView = buildContentView(cfg: manager?.config)
         win.isReleasedWhenClosed = false
         win.delegate = self
         win.center()
         window = win
         retainedSelf = self
-
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
-        // Leave the form unfocused until the user clicks a field or presses Tab.
         win.makeFirstResponder(nil)
     }
 
-    // MARK: - Layout
+    private func label(_ title: String, size: CGFloat = 13, weight: NSFont.Weight = .regular,
+                       color: NSColor = .labelColor) -> NSTextField {
+        let field = NSTextField(labelWithString: title)
+        field.font = .systemFont(ofSize: size, weight: weight)
+        field.textColor = color
+        field.translatesAutoresizingMaskIntoConstraints = false
+        return field
+    }
 
     private func buildContentView(cfg: TrickleBarConfig?) -> NSView {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 360))
+        let root = SettingsBackground(frame: NSRect(x: 0, y: 0, width: 540, height: 550))
+        let downloadsTitle = label("Downloads", size: 14, weight: .semibold)
+        let downloadsGroup = SettingsPanel()
+        downloadsGroup.translatesAutoresizingMaskIntoConstraints = false
 
-        // ── Download folder ─────────────────────────────────────────────
-        let dirTitle = sectionLabel("Download folder")
+        let folderTitle = label("Download folder", size: 14)
         dirField.stringValue = cfg?.resolvedDownloadDir ?? TrickleBarConfig.defaultDownloadDir
+        dirField.font = .systemFont(ofSize: 12)
+        dirField.textColor = .secondaryLabelColor
         dirField.lineBreakMode = .byTruncatingMiddle
         dirField.isSelectable = true
-        dirField.font = .systemFont(ofSize: 12)
+        dirField.toolTip = dirField.stringValue
         dirField.translatesAutoresizingMaskIntoConstraints = false
         dirField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let choose = NSButton(title: "Choose…", target: self, action: #selector(chooseDir))
+        choose.bezelStyle = .rounded
+        choose.controlSize = .small
+        choose.image = interfaceSymbol("folder", size: 13, description: "Choose download folder")
+        choose.imagePosition = .imageLeading
+        choose.translatesAutoresizingMaskIntoConstraints = false
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
 
-        let chooseBtn = NSButton(title: "Choose…", target: self, action: #selector(chooseDir))
-        chooseBtn.bezelStyle = .rounded
-        chooseBtn.translatesAutoresizingMaskIntoConstraints = false
-
-        // ── Max active downloads ────────────────────────────────────────
-        let maxTitle = sectionLabel("Max active downloads")
+        let queueTitle = label("Max active downloads", size: 14)
+        let queueHint = label("Limit how many downloads run at the same time.", size: 12, color: .secondaryLabelColor)
         let n = cfg?.resolvedMaxConcurrent ?? TrickleBarConfig.defaultMaxConcurrent
-        let fmt = NumberFormatter()
-        fmt.minimum = 1; fmt.maximum = 50; fmt.allowsFloats = false
-        maxField.formatter = fmt
+        let formatter = NumberFormatter()
+        formatter.minimum = 1
+        formatter.maximum = 50
+        formatter.allowsFloats = false
+        maxField.formatter = formatter
         maxField.integerValue = n
-        maxField.alignment = .center
+        maxField.alignment = .right
+        maxField.font = .monospacedDigitSystemFont(ofSize: 14, weight: .regular)
+        maxField.isBezeled = false
+        maxField.drawsBackground = false
         maxField.translatesAutoresizingMaskIntoConstraints = false
-        maxStepper.minValue = 1; maxStepper.maxValue = 50; maxStepper.increment = 1
+        maxField.target = self
+        maxField.action = #selector(maxFieldChanged)
+        maxField.setAccessibilityLabel("Maximum active downloads")
+        maxStepper.minValue = 1
+        maxStepper.maxValue = 50
+        maxStepper.increment = 1
         maxStepper.integerValue = n
-        maxStepper.valueWraps = false
-        maxStepper.target = self; maxStepper.action = #selector(stepperChanged)
+        maxStepper.target = self
+        maxStepper.action = #selector(stepperChanged)
         maxStepper.translatesAutoresizingMaskIntoConstraints = false
-        maxField.target = self; maxField.action = #selector(maxFieldChanged)
+        maxStepper.setAccessibilityLabel("Adjust maximum active downloads")
 
-        // ── Custom aria2c options ───────────────────────────────────────
-        let optTitle = sectionLabel("Custom aria2c options")
-        let hint = NSTextField(labelWithString: "One flag per line, e.g. --max-connection-per-server=16. Overrides the app defaults.")
-        hint.font = .systemFont(ofSize: 10)
-        hint.textColor = .secondaryLabelColor
-        hint.lineBreakMode = .byWordWrapping
-        hint.maximumNumberOfLines = 2
-        hint.translatesAutoresizingMaskIntoConstraints = false
-
-        let optScroll = NSScrollView()
-        optScroll.hasVerticalScroller = true
-        optScroll.borderType = .bezelBorder
-        optScroll.translatesAutoresizingMaskIntoConstraints = false
-        optionsView.isEditable = true; optionsView.isSelectable = true
-        optionsView.allowsUndo = true; optionsView.isRichText = false
+        let advancedTitle = label("Advanced", size: 14, weight: .semibold)
+        let optionsGroup = SettingsPanel()
+        optionsGroup.translatesAutoresizingMaskIntoConstraints = false
+        let optionsTitle = label("Custom aria2c options", size: 14)
+        let terminal = NSImageView()
+        terminal.image = interfaceSymbol("terminal", size: 16)
+        terminal.contentTintColor = .secondaryLabelColor
+        terminal.translatesAutoresizingMaskIntoConstraints = false
+        let optionsDivider = NSBox()
+        optionsDivider.boxType = .separator
+        optionsDivider.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        optionsView.isEditable = true
+        optionsView.isSelectable = true
+        optionsView.allowsUndo = true
+        optionsView.isRichText = false
+        optionsView.isAutomaticQuoteSubstitutionEnabled = false
+        optionsView.isAutomaticDashSubstitutionEnabled = false
         optionsView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        optionsView.textContainerInset = NSSize(width: 2, height: 4)
+        optionsView.textColor = .labelColor
+        optionsView.drawsBackground = false
+        optionsView.textContainerInset = NSSize(width: 0, height: 8)
         optionsView.string = cfg?.customOptions ?? ""
-        optionsView.autoresizingMask = [.width]
-        optScroll.documentView = optionsView
+        optionsView.minSize = NSSize(width: 0, height: 120)
+        optionsView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        optionsView.isVerticallyResizable = true
+        optionsView.isHorizontallyResizable = false
+        optionsView.autoresizingMask = .width
+        optionsView.textContainer?.widthTracksTextView = true
+        optionsView.textContainer?.containerSize = NSSize(width: 450, height: CGFloat.greatestFiniteMagnitude)
+        optionsView.frame = NSRect(x: 0, y: 0, width: 460, height: 120)
+        optionsView.setAccessibilityLabel("Custom aria2c options, one flag per line")
+        scroll.documentView = optionsView
+        let optionsHint = label("One flag per line, e.g. --max-connection-per-server=16.\nThese options override the app defaults.", size: 12, color: .secondaryLabelColor)
+        optionsHint.maximumNumberOfLines = 2
+        optionsHint.lineBreakMode = .byWordWrapping
 
-        // ── Buttons ─────────────────────────────────────────────────────
-        let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(cancel))
-        cancelBtn.bezelStyle = .rounded
-        cancelBtn.keyEquivalent = "\u{1b}" // Esc
-        cancelBtn.translatesAutoresizingMaskIntoConstraints = false
-        let saveBtn = NSButton(title: "Save", target: self, action: #selector(save))
-        saveBtn.bezelStyle = .rounded
-        saveBtn.keyEquivalent = "\r"
-        saveBtn.translatesAutoresizingMaskIntoConstraints = false
+        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelAction))
+        cancel.bezelStyle = .rounded
+        cancel.keyEquivalent = "\u{1b}"
+        cancel.translatesAutoresizingMaskIntoConstraints = false
+        let save = NSButton(title: "Save Changes", target: self, action: #selector(saveAction))
+        save.bezelStyle = .rounded
+        save.keyEquivalent = "\r"
+        save.translatesAutoresizingMaskIntoConstraints = false
 
-        for v in [dirTitle, dirField, chooseBtn, maxTitle, maxField, maxStepper,
-                  optTitle, hint, optScroll, cancelBtn, saveBtn] {
+        for v in [downloadsTitle, downloadsGroup, queueHint, advancedTitle, optionsGroup, optionsHint, cancel, save] {
             root.addSubview(v)
         }
-
-        let pad: CGFloat = 20
+        for v in [folderTitle, dirField, choose, divider, queueTitle, maxField, maxStepper] {
+            downloadsGroup.addSubview(v)
+        }
+        for v in [optionsTitle, terminal, optionsDivider, scroll] { optionsGroup.addSubview(v) }
         NSLayoutConstraint.activate([
-            dirTitle.topAnchor.constraint(equalTo: root.topAnchor, constant: pad),
-            dirTitle.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-
-            chooseBtn.centerYAnchor.constraint(equalTo: dirField.centerYAnchor),
-            chooseBtn.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -pad),
-            dirField.topAnchor.constraint(equalTo: dirTitle.bottomAnchor, constant: 4),
-            dirField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-            dirField.trailingAnchor.constraint(equalTo: chooseBtn.leadingAnchor, constant: -8),
-
-            maxTitle.topAnchor.constraint(equalTo: dirField.bottomAnchor, constant: 16),
-            maxTitle.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-            maxField.topAnchor.constraint(equalTo: maxTitle.bottomAnchor, constant: 4),
-            maxField.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-            maxField.widthAnchor.constraint(equalToConstant: 56),
-            maxStepper.centerYAnchor.constraint(equalTo: maxField.centerYAnchor),
-            maxStepper.leadingAnchor.constraint(equalTo: maxField.trailingAnchor, constant: 4),
-
-            optTitle.topAnchor.constraint(equalTo: maxField.bottomAnchor, constant: 16),
-            optTitle.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-            hint.topAnchor.constraint(equalTo: optTitle.bottomAnchor, constant: 2),
-            hint.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-            hint.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -pad),
-            optScroll.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 6),
-            optScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: pad),
-            optScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -pad),
-            optScroll.bottomAnchor.constraint(equalTo: saveBtn.topAnchor, constant: -16),
-
-            saveBtn.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -pad),
-            saveBtn.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -pad),
-            saveBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 80),
-            cancelBtn.centerYAnchor.constraint(equalTo: saveBtn.centerYAnchor),
-            cancelBtn.trailingAnchor.constraint(equalTo: saveBtn.leadingAnchor, constant: -10),
+            downloadsTitle.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
+            downloadsTitle.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            downloadsGroup.topAnchor.constraint(equalTo: downloadsTitle.bottomAnchor, constant: 12),
+            downloadsGroup.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
+            downloadsGroup.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
+            downloadsGroup.heightAnchor.constraint(equalToConstant: 122),
+            folderTitle.leadingAnchor.constraint(equalTo: downloadsGroup.leadingAnchor, constant: 14),
+            folderTitle.topAnchor.constraint(equalTo: downloadsGroup.topAnchor, constant: 15),
+            dirField.leadingAnchor.constraint(equalTo: folderTitle.leadingAnchor),
+            dirField.topAnchor.constraint(equalTo: folderTitle.bottomAnchor, constant: 5),
+            dirField.trailingAnchor.constraint(equalTo: choose.leadingAnchor, constant: -16),
+            choose.trailingAnchor.constraint(equalTo: downloadsGroup.trailingAnchor, constant: -14),
+            choose.centerYAnchor.constraint(equalTo: downloadsGroup.topAnchor, constant: 34),
+            choose.widthAnchor.constraint(equalToConstant: 90),
+            divider.leadingAnchor.constraint(equalTo: folderTitle.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: downloadsGroup.trailingAnchor, constant: -14),
+            divider.topAnchor.constraint(equalTo: downloadsGroup.topAnchor, constant: 72),
+            queueTitle.leadingAnchor.constraint(equalTo: folderTitle.leadingAnchor),
+            queueTitle.centerYAnchor.constraint(equalTo: downloadsGroup.topAnchor, constant: 97),
+            maxStepper.trailingAnchor.constraint(equalTo: downloadsGroup.trailingAnchor, constant: -14),
+            maxStepper.centerYAnchor.constraint(equalTo: queueTitle.centerYAnchor),
+            maxField.trailingAnchor.constraint(equalTo: maxStepper.leadingAnchor, constant: -8),
+            maxField.centerYAnchor.constraint(equalTo: maxStepper.centerYAnchor),
+            maxField.widthAnchor.constraint(equalToConstant: 40),
+            queueHint.topAnchor.constraint(equalTo: downloadsGroup.bottomAnchor, constant: 10),
+            queueHint.leadingAnchor.constraint(equalTo: downloadsTitle.leadingAnchor),
+            advancedTitle.topAnchor.constraint(equalTo: queueHint.bottomAnchor, constant: 28),
+            advancedTitle.leadingAnchor.constraint(equalTo: downloadsTitle.leadingAnchor),
+            optionsGroup.topAnchor.constraint(equalTo: advancedTitle.bottomAnchor, constant: 12),
+            optionsGroup.leadingAnchor.constraint(equalTo: downloadsGroup.leadingAnchor),
+            optionsGroup.trailingAnchor.constraint(equalTo: downloadsGroup.trailingAnchor),
+            optionsGroup.heightAnchor.constraint(equalToConstant: 168),
+            optionsTitle.leadingAnchor.constraint(equalTo: optionsGroup.leadingAnchor, constant: 14),
+            optionsTitle.centerYAnchor.constraint(equalTo: optionsGroup.topAnchor, constant: 24),
+            terminal.trailingAnchor.constraint(equalTo: optionsGroup.trailingAnchor, constant: -14),
+            terminal.centerYAnchor.constraint(equalTo: optionsTitle.centerYAnchor),
+            terminal.widthAnchor.constraint(equalToConstant: 20),
+            terminal.heightAnchor.constraint(equalToConstant: 20),
+            optionsDivider.topAnchor.constraint(equalTo: optionsGroup.topAnchor, constant: 48),
+            optionsDivider.leadingAnchor.constraint(equalTo: optionsTitle.leadingAnchor),
+            optionsDivider.trailingAnchor.constraint(equalTo: terminal.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: optionsDivider.bottomAnchor, constant: 4),
+            scroll.leadingAnchor.constraint(equalTo: optionsTitle.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: optionsGroup.trailingAnchor, constant: -14),
+            scroll.bottomAnchor.constraint(equalTo: optionsGroup.bottomAnchor, constant: -12),
+            optionsHint.topAnchor.constraint(equalTo: optionsGroup.bottomAnchor, constant: 10),
+            optionsHint.leadingAnchor.constraint(equalTo: downloadsTitle.leadingAnchor),
+            optionsHint.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            save.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
+            save.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -18),
+            save.topAnchor.constraint(greaterThanOrEqualTo: optionsHint.bottomAnchor, constant: 18),
+            save.widthAnchor.constraint(equalToConstant: 112),
+            cancel.trailingAnchor.constraint(equalTo: save.leadingAnchor, constant: -10),
+            cancel.centerYAnchor.constraint(equalTo: save.centerYAnchor),
+            cancel.widthAnchor.constraint(equalToConstant: 80),
         ])
         return root
     }
 
-    private func sectionLabel(_ s: String) -> NSTextField {
-        let l = NSTextField(labelWithString: s)
-        l.font = .systemFont(ofSize: 12, weight: .semibold)
-        l.translatesAutoresizingMaskIntoConstraints = false
-        return l
-    }
-
-    // MARK: - Actions
-
     @objc private func chooseDir() {
+        guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
+        panel.prompt = "Choose Folder"
         panel.directoryURL = URL(fileURLWithPath: dirField.stringValue)
-        if panel.runModal() == .OK, let url = panel.url {
-            dirField.stringValue = url.path
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.dirField.stringValue = url.path
+            self?.dirField.toolTip = url.path
         }
     }
 
     @objc private func stepperChanged() { maxField.integerValue = maxStepper.integerValue }
-    @objc private func maxFieldChanged() { maxStepper.integerValue = maxField.integerValue }
+    @objc private func maxFieldChanged() {
+        maxField.integerValue = min(max(maxField.integerValue, 1), 50)
+        maxStepper.integerValue = maxField.integerValue
+    }
 
-    @objc private func save() {
+    @objc private func saveAction() {
+        window?.makeFirstResponder(nil)
         let dir = dirField.stringValue.trimmingCharacters(in: .whitespaces)
-        let n = min(max(maxField.integerValue, 1), 50)
         let opts = optionsView.string
-        manager?.applySettings(
-            downloadDir: dir.isEmpty ? nil : dir,
-            maxConcurrent: n,
-            customOptions: opts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : opts
-        )
-        close()
-    }
-
-    @objc private func cancel() { close() }
-
-    private func close() {
+        manager?.applySettings(downloadDir: dir.isEmpty ? nil : dir,
+                               maxConcurrent: min(max(maxField.integerValue, 1), 50),
+                               customOptions: opts.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : opts)
         window?.close()
-        window = nil
-        retainedSelf = nil
     }
+
+    @objc private func cancelAction() { window?.close() }
 
     func windowWillClose(_ notification: Notification) {
         window = nil

@@ -38,8 +38,8 @@ final class SectionHeaderView: NSTableCellView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        label.font = .systemFont(ofSize: 10, weight: .bold)
-        label.textColor = .tertiaryLabelColor
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         addSubview(clearButton)
@@ -57,7 +57,7 @@ final class SectionHeaderView: NSTableCellView {
     required init?(coder: NSCoder) { fatalError() }
 
     func configure(title: String, onClearAll: (() -> Void)? = nil) {
-        label.stringValue = title
+        label.stringValue = title.capitalized
         self.onClearAll = onClearAll
         clearButton.isHidden = onClearAll == nil
     }
@@ -107,6 +107,8 @@ final class DownloadRowView: NSTableCellView {
     private let btn1 = DownloadRowView.makeIconButton()
     private let btn2 = DownloadRowView.makeIconButton()
     private let btn3 = DownloadRowView.makeIconButton()
+    private let actions = NSStackView()
+    private var actionsWidth: NSLayoutConstraint!
 
     // Action closures set by the table delegate
     var action1: (() -> Void)?
@@ -120,8 +122,21 @@ final class DownloadRowView: NSTableCellView {
     required init?(coder: NSCoder) { fatalError() }
 
     private func setup() {
-        for v in [iconView, nameLabel, progressBar, detailLabel, detailLabel2, btn1, btn2, btn3] {
+        for v in [iconView, nameLabel, progressBar, detailLabel, detailLabel2, actions] {
             addSubview(v)
+        }
+        actions.orientation = .horizontal
+        actions.spacing = 4
+        actions.detachesHiddenViews = true
+        actions.setContentHuggingPriority(.required, for: .horizontal)
+        actions.setContentCompressionResistancePriority(.required, for: .horizontal)
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        actionsWidth = actions.widthAnchor.constraint(equalToConstant: 60)
+        actionsWidth.isActive = true
+        for button in [btn3, btn2, btn1] {
+            actions.addArrangedSubview(button)
+            button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 28).isActive = true
         }
         btn1.target = self; btn1.action = #selector(tap1)
         btn2.target = self; btn2.action = #selector(tap2)
@@ -134,32 +149,19 @@ final class DownloadRowView: NSTableCellView {
             iconView.widthAnchor.constraint(equalToConstant: 22),
             iconView.heightAnchor.constraint(equalToConstant: 22),
 
-            // Buttons — right-aligned, three slots always reserved
-            btn1.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            btn1.centerYAnchor.constraint(equalTo: centerYAnchor),
-            btn1.widthAnchor.constraint(equalToConstant: 22),
-            btn1.heightAnchor.constraint(equalToConstant: 22),
-
-            btn2.trailingAnchor.constraint(equalTo: btn1.leadingAnchor, constant: -8),
-            btn2.centerYAnchor.constraint(equalTo: centerYAnchor),
-            btn2.widthAnchor.constraint(equalToConstant: 22),
-            btn2.heightAnchor.constraint(equalToConstant: 22),
-
-            btn3.trailingAnchor.constraint(equalTo: btn2.leadingAnchor, constant: -8),
-            btn3.centerYAnchor.constraint(equalTo: centerYAnchor),
-            btn3.widthAnchor.constraint(equalToConstant: 22),
-            btn3.heightAnchor.constraint(equalToConstant: 22),
+            actions.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            actions.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             // Text area: between icon and btn3 (widest button layout)
             nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            nameLabel.trailingAnchor.constraint(equalTo: btn3.leadingAnchor, constant: -8),
-            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            nameLabel.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -12),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             nameLabel.heightAnchor.constraint(equalToConstant: 16),
 
             progressBar.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             progressBar.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
             progressBar.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
-            progressBar.heightAnchor.constraint(equalToConstant: 3),
+            progressBar.heightAnchor.constraint(equalToConstant: 4),
 
             detailLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             detailLabel.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
@@ -199,6 +201,8 @@ final class DownloadRowView: NSTableCellView {
         action1 = primary
         action2 = secondary
         action3 = tertiary
+        let buttonCount = [primary, secondary, tertiary].filter { $0 != nil }.count
+        actionsWidth.constant = CGFloat(buttonCount * 28 + max(0, buttonCount - 1) * 4)
 
         styleButton(btn1, symbol: primarySymbol, tint: primaryTint, tip: primaryTip, hidden: primary == nil)
         styleButton(btn2, symbol: secondarySymbol, tint: secondaryTint, tip: secondaryTip, hidden: secondary == nil)
@@ -214,6 +218,7 @@ final class DownloadRowView: NSTableCellView {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .regular))
         btn.contentTintColor = tint
         btn.toolTip = tip
+        btn.setAccessibilityLabel(tip)
     }
 
     @objc private func tap1() { action1?() }
@@ -233,7 +238,7 @@ final class DownloadRowView: NSTableCellView {
             }
         }()
         guard let base = NSImage(systemSymbolName: sym, accessibilityDescription: nil) else { return nil }
-        return base.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
+        return base.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.white, color]))
     }
 
     // Line 1: progress percentage + downloaded / total

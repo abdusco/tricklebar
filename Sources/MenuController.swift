@@ -108,11 +108,11 @@ private enum ListItem: Equatable {
     case download(Download)
 }
 
-private let kRowHeight: CGFloat   = 74
-private let kHeaderHeight: CGFloat = 26
-private let kTopBarHeight: CGFloat  = 52
+private let kRowHeight: CGFloat   = 82
+private let kHeaderHeight: CGFloat = 30
+private let kTopBarHeight: CGFloat  = 68
 private let kBottomBarHeight: CGFloat = 44
-private let kPopoverWidth: CGFloat  = 390
+private let kPopoverWidth: CGFloat  = 420
 private let kMaxTableHeight: CGFloat = 360
 
 final class DownloadsViewController: NSViewController {
@@ -122,6 +122,8 @@ final class DownloadsViewController: NSViewController {
     weak var popoverRef: NSPopover?
     private var heightConstraint: NSLayoutConstraint!
     private var settingsWC: SettingsWindowController?
+    private let summaryLabel = NSTextField(labelWithString: "")
+    private let emptyState = NSStackView()
 
     init(manager: DownloadManager) {
         self.manager = manager
@@ -162,6 +164,11 @@ final class DownloadsViewController: NSViewController {
         items = updatedItems
 
         if isViewLoaded {
+            let active = downloads.filter { $0.status == .active }
+            summaryLabel.stringValue = active.isEmpty
+                ? "Everything in one place"
+                : "\(active.count) active · \(formatBytes(active.reduce(Int64(0)) { $0 + $1.downloadSpeed }))/s"
+            emptyState.isHidden = !items.isEmpty
             if structureChanged {
                 tableView.reloadData()
             } else if !changedRows.isEmpty {
@@ -200,8 +207,7 @@ final class DownloadsViewController: NSViewController {
         let tableH = items.reduce(CGFloat(0)) { sum, item in
             sum + (item.isSectionHeader ? kHeaderHeight : kRowHeight)
         }.clamped(to: 40...kMaxTableHeight)
-        let emptyH: CGFloat = items.isEmpty ? 44 : 0
-        let total = kTopBarHeight + tableH + emptyH + kBottomBarHeight
+        let total = kTopBarHeight + (items.isEmpty ? 168 : tableH) + kBottomBarHeight
         heightConstraint?.constant = total
         preferredContentSize = NSSize(width: kPopoverWidth, height: total)
     }
@@ -214,8 +220,11 @@ final class DownloadsViewController: NSViewController {
         topBar.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = NSTextField(labelWithString: "Downloads")
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        summaryLabel.font = .systemFont(ofSize: 11)
+        summaryLabel.textColor = .secondaryLabelColor
+        summaryLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let addBtn = NSButton()
         // A solid, properly sized plus glyph reads as an obvious "add" affordance;
@@ -223,7 +232,7 @@ final class DownloadsViewController: NSViewController {
         addBtn.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add Download")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .bold))
         addBtn.imageScaling = .scaleNone
-        addBtn.bezelStyle = .circular
+        addBtn.bezelStyle = .rounded
         addBtn.isBordered = true
         addBtn.contentTintColor = .controlAccentColor
         addBtn.toolTip = "Add Download"
@@ -243,6 +252,7 @@ final class DownloadsViewController: NSViewController {
         settingsBtn.translatesAutoresizingMaskIntoConstraints = false
 
         topBar.addSubview(titleLabel)
+        topBar.addSubview(summaryLabel)
         topBar.addSubview(settingsBtn)
         topBar.addSubview(addBtn)
 
@@ -251,15 +261,18 @@ final class DownloadsViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             titleLabel.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
-            titleLabel.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
+            titleLabel.topAnchor.constraint(equalTo: topBar.topAnchor, constant: 14),
+            summaryLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
+            summaryLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            summaryLabel.trailingAnchor.constraint(lessThanOrEqualTo: settingsBtn.leadingAnchor, constant: -12),
             addBtn.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -14),
             addBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
-            addBtn.widthAnchor.constraint(equalToConstant: 22),
-            addBtn.heightAnchor.constraint(equalToConstant: 22),
+            addBtn.widthAnchor.constraint(equalToConstant: 30),
+            addBtn.heightAnchor.constraint(equalToConstant: 28),
             settingsBtn.trailingAnchor.constraint(equalTo: addBtn.leadingAnchor, constant: -8),
             settingsBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: -1),
-            settingsBtn.widthAnchor.constraint(equalToConstant: 22),
-            settingsBtn.heightAnchor.constraint(equalToConstant: 22),
+            settingsBtn.widthAnchor.constraint(equalToConstant: 28),
+            settingsBtn.heightAnchor.constraint(equalToConstant: 28),
             topSep.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
             topSep.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
             topSep.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
@@ -295,6 +308,8 @@ final class DownloadsViewController: NSViewController {
         botBar.addSubview(botSep)
 
         let openBtn = textButton("Open Downloads Folder", action: #selector(openFolderAction))
+        openBtn.image = interfaceSymbol("folder", size: 13, description: "Open Downloads Folder")
+        openBtn.imagePosition = .imageLeading
         let quitBtn = textButton("Quit", action: #selector(quitAction))
         botBar.addSubview(openBtn)
         botBar.addSubview(quitBtn)
@@ -314,6 +329,20 @@ final class DownloadsViewController: NSViewController {
         view.addSubview(topBar)
         view.addSubview(scroll)
         view.addSubview(botBar)
+        let emptyIcon = NSImageView()
+        emptyIcon.image = interfaceSymbol("tray.and.arrow.down", size: 34)
+        emptyIcon.contentTintColor = .tertiaryLabelColor
+        let emptyTitle = NSTextField(labelWithString: "Ready for your next download")
+        emptyTitle.font = .systemFont(ofSize: 13, weight: .medium)
+        let emptyHint = NSTextField(labelWithString: "Click + to add a download link.")
+        emptyHint.font = .systemFont(ofSize: 12)
+        emptyHint.textColor = .secondaryLabelColor
+        emptyState.orientation = .vertical
+        emptyState.alignment = .centerX
+        emptyState.spacing = 8
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
+        for v in [emptyIcon, emptyTitle, emptyHint] { emptyState.addArrangedSubview(v) }
+        view.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: view.topAnchor),
@@ -330,6 +359,8 @@ final class DownloadsViewController: NSViewController {
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: botBar.topAnchor),
+            emptyState.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
+            emptyState.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
         ])
     }
 
@@ -420,6 +451,7 @@ final class DownloadsViewController: NSViewController {
     private func textButton(_ title: String, action: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: action)
         b.bezelStyle = .rounded
+        b.isBordered = false
         b.controlSize = .small
         b.translatesAutoresizingMaskIntoConstraints = false
         return b
