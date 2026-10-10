@@ -17,7 +17,11 @@ enum CLIHandler {
         let args = Array(CommandLine.arguments.dropFirst())
 
         if args.contains("-h") || args.contains("--help") { printHelp(); return }
-        if args.contains("-v") || args.contains("--version") { print("tricklebar 1.0.0"); return }
+        if args.contains("-v") || args.contains("--version") {
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
+            print("tricklebar \(version)")
+            return
+        }
 
         guard let cfg = DownloadManager.readConfig() else {
             fputs("tricklebar: no running daemon — open TrickleBar.app first\n", stderr)
